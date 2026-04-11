@@ -67,7 +67,7 @@ private:
     std::mutex io_mutex_;
 
     std::string read_line();
-    void write_message(const json& msg);
+    void write_message_locked(const json& msg);
 };
 
 class SSETransport : public McpTransport {

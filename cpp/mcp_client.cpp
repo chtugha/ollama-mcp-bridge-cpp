@@ -33,15 +33,26 @@ StdioTransport::~StdioTransport() {
 }
 
 bool StdioTransport::connect() {
-    int stdin_pipe[2], stdout_pipe[2];
-    if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0) {
-        spdlog::error("Failed to create pipes");
+    int stdin_pipe[2] = {-1, -1};
+    int stdout_pipe[2] = {-1, -1};
+    if (pipe(stdin_pipe) != 0) {
+        spdlog::error("Failed to create stdin pipe");
+        return false;
+    }
+    if (pipe(stdout_pipe) != 0) {
+        spdlog::error("Failed to create stdout pipe");
+        close(stdin_pipe[0]);
+        close(stdin_pipe[1]);
         return false;
     }
 
     pid_t pid = fork();
     if (pid < 0) {
         spdlog::error("Failed to fork process");
+        close(stdin_pipe[0]);
+        close(stdin_pipe[1]);
+        close(stdout_pipe[0]);
+        close(stdout_pipe[1]);
         return false;
     }
 
@@ -86,9 +97,6 @@ bool StdioTransport::connect() {
     child_pid_ = pid;
     stdin_fd_ = stdin_pipe[1];
     stdout_fd_ = stdout_pipe[0];
-
-    int flags = fcntl(stdout_fd_, F_GETFL, 0);
-    fcntl(stdout_fd_, F_SETFL, flags | O_NONBLOCK);
 
     connected_ = true;
     return true;
@@ -137,16 +145,22 @@ std::string StdioTransport::read_line() {
     return line;
 }
 
-void StdioTransport::write_message(const json& msg) {
+void StdioTransport::write_message_locked(const json& msg) {
     std::string data = msg.dump() + "\n";
-    std::lock_guard<std::mutex> lock(io_mutex_);
-    ssize_t written = write(stdin_fd_, data.c_str(), data.size());
-    if (written < 0) {
-        spdlog::error("Failed to write to MCP server stdin");
+    size_t total = 0;
+    while (total < data.size()) {
+        ssize_t n = write(stdin_fd_, data.c_str() + total, data.size() - total);
+        if (n <= 0) {
+            spdlog::error("Failed to write to MCP server stdin");
+            break;
+        }
+        total += n;
     }
 }
 
 json StdioTransport::send_request(const std::string& method, const json& params) {
+    std::lock_guard<std::mutex> lock(io_mutex_);
+
     int id = ++request_id_;
 
     json request = {
@@ -156,7 +170,7 @@ json StdioTransport::send_request(const std::string& method, const json& params)
         {"params", params}
     };
 
-    write_message(request);
+    write_message_locked(request);
 
     while (connected_) {
         std::string line = read_line();

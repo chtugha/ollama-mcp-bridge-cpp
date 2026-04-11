@@ -3,6 +3,7 @@
 
 #include <httplib.h>
 #include <spdlog/spdlog.h>
+#include <sstream>
 
 namespace omb {
 
@@ -67,9 +68,18 @@ static void add_cors_headers(const httplib::Request& req, httplib::Response& res
         res.set_header("Access-Control-Allow-Origin", "*");
     } else {
         std::string request_origin = req.get_header_value("Origin");
-        if (!request_origin.empty() && cors_origins.find(request_origin) != std::string::npos) {
-            res.set_header("Access-Control-Allow-Origin", request_origin);
-            res.set_header("Access-Control-Allow-Credentials", "true");
+        if (!request_origin.empty()) {
+            std::istringstream ss(cors_origins);
+            std::string origin;
+            while (std::getline(ss, origin, ',')) {
+                while (!origin.empty() && origin.front() == ' ') origin.erase(origin.begin());
+                while (!origin.empty() && origin.back() == ' ') origin.pop_back();
+                if (origin == request_origin) {
+                    res.set_header("Access-Control-Allow-Origin", request_origin);
+                    res.set_header("Access-Control-Allow-Credentials", "true");
+                    break;
+                }
+            }
         }
     }
     res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
