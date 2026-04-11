@@ -103,11 +103,13 @@ bool StdioTransport::connect() {
 }
 
 void StdioTransport::disconnect() {
-    if (!connected_) return;
-    connected_ = false;
+    if (!connected_.exchange(false)) return;
 
-    if (stdin_fd_ >= 0) { close(stdin_fd_); stdin_fd_ = -1; }
-    if (stdout_fd_ >= 0) { close(stdout_fd_); stdout_fd_ = -1; }
+    {
+        std::lock_guard<std::mutex> lock(io_mutex_);
+        if (stdin_fd_ >= 0) { close(stdin_fd_); stdin_fd_ = -1; }
+        if (stdout_fd_ >= 0) { close(stdout_fd_); stdout_fd_ = -1; }
+    }
 
     if (child_pid_ > 0) {
         kill(child_pid_, SIGTERM);

@@ -83,7 +83,9 @@ static void add_cors_headers(const httplib::Request& req, httplib::Response& res
         }
     }
     res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD");
-    res.set_header("Access-Control-Allow-Headers", "*");
+    std::string requested_headers = req.get_header_value("Access-Control-Request-Headers");
+    res.set_header("Access-Control-Allow-Headers",
+        requested_headers.empty() ? "Content-Type, Authorization, X-Requested-With" : requested_headers);
 }
 
 void Server::setup_routes() {
