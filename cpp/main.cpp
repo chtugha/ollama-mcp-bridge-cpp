@@ -9,11 +9,9 @@
 #include <csignal>
 #include <atomic>
 
-static std::atomic<bool> g_running{true};
 static std::atomic<omb::Server*> g_server{nullptr};
 
 static void signal_handler(int) {
-    g_running = false;
     auto* srv = g_server.load(std::memory_order_acquire);
     if (srv) srv->stop();
 }

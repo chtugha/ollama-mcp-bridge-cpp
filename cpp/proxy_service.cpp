@@ -9,9 +9,7 @@ namespace omb {
 ProxyService::ProxyService(MCPManager& mcp_manager)
     : mcp_manager_(mcp_manager) {}
 
-ProxyService::~ProxyService() {
-    cleanup();
-}
+ProxyService::~ProxyService() = default;
 
 std::vector<json> ProxyService::maybe_prepend_system_prompt(const std::vector<json>& messages) {
     if (!mcp_manager_.system_prompt) return messages;
@@ -88,10 +86,6 @@ json ProxyService::make_final_llm_call(const std::string& endpoint, const json& 
 }
 
 ChatResponse ProxyService::proxy_chat_with_tools(const json& payload) {
-    if (!check_ollama_health(mcp_manager_.ollama_url)) {
-        return {503, {{"error", "Ollama server not accessible"}}};
-    }
-
     json working_payload = payload;
     working_payload["stream"] = false;
     auto tools_json = mcp_manager_.get_tools_json();
@@ -158,12 +152,6 @@ ChatResponse ProxyService::proxy_chat_with_tools(const json& payload) {
 }
 
 void ProxyService::proxy_chat_with_tools_streaming(const json& payload, StreamCallback callback) {
-    if (!check_ollama_health(mcp_manager_.ollama_url)) {
-        json error = {{"error", "Ollama server not accessible"}};
-        callback(error.dump() + "\n");
-        return;
-    }
-
     json working_payload = payload;
     auto tools_json = mcp_manager_.get_tools_json();
     if (!tools_json.empty()) {
@@ -192,8 +180,10 @@ void ProxyService::proxy_chat_with_tools_streaming(const json& payload, StreamCa
         std::vector<json> tool_calls;
         std::string response_text;
         bool done = false;
+        bool received_any = false;
 
         http_post_stream(url, current_payload.dump(), [&](const std::string& chunk) {
+            received_any = true;
             accumulated += chunk;
             std::string line;
             while (true) {
@@ -227,6 +217,12 @@ void ProxyService::proxy_chat_with_tools_streaming(const json& payload, StreamCa
                 }
             }
         });
+
+        if (!received_any) {
+            json err = {{"error", "Failed to connect to Ollama server"}, {"done", true}};
+            callback(err.dump() + "\n");
+            break;
+        }
 
         if (!accumulated.empty()) {
             try {
@@ -292,9 +288,6 @@ ProxyService::GenericResponse ProxyService::proxy_generic_request(
         spdlog::error("Proxy failed for {}: {}", path, e.what());
         return {503, json({{"error", std::string("Could not connect to target server: ") + e.what()}}).dump(), {}};
     }
-}
-
-void ProxyService::cleanup() {
 }
 
 }

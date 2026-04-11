@@ -1,5 +1,6 @@
 #include "utils.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <regex>
 #include <sstream>
@@ -24,7 +25,7 @@
 
 namespace omb {
 
-static bool ollama_proxy_timeout_warned = false;
+static std::atomic<bool> ollama_proxy_timeout_warned{false};
 
 std::string get_env(const std::string& name, const std::string& default_val) {
     const char* val = std::getenv(name.c_str());
@@ -42,8 +43,7 @@ std::tuple<bool, std::optional<double>> get_ollama_proxy_timeout_config() {
             return {false, std::nullopt};
         }
         if (timeout_ms == 0) {
-            if (!ollama_proxy_timeout_warned) {
-                ollama_proxy_timeout_warned = true;
+            if (!ollama_proxy_timeout_warned.exchange(true)) {
                 spdlog::warn("OLLAMA_PROXY_TIMEOUT=0 disables HTTP timeouts for Ollama requests. "
                              "This may cause requests to hang indefinitely if Ollama stops responding.");
             }
@@ -131,6 +131,8 @@ std::string url_path(const std::string& url) {
     return "/";
 }
 
+static constexpr int kDefaultConnectionTimeoutSec = 30;
+
 static std::unique_ptr<httplib::Client> make_client(const std::string& url, int timeout_sec) {
     std::string host = url_host(url);
     int port = url_port(url);
@@ -140,7 +142,7 @@ static std::unique_ptr<httplib::Client> make_client(const std::string& url, int 
         cli->set_read_timeout(timeout_sec, 0);
         cli->set_connection_timeout(timeout_sec, 0);
     } else {
-        cli->set_connection_timeout(30, 0);
+        cli->set_connection_timeout(kDefaultConnectionTimeoutSec, 0);
         cli->set_read_timeout(0, 0);
     }
     return cli;
@@ -179,6 +181,7 @@ HttpResponse http_request(const std::string& method, const std::string& url,
         if (method == "PATCH") return cli->Patch(path, hdrs, body, "application/json");
         if (method == "OPTIONS") return cli->Options(path, hdrs);
         if (method == "HEAD") return cli->Head(path, hdrs);
+        spdlog::warn("Unsupported HTTP method '{}', falling back to GET", method);
         return cli->Get(path, hdrs);
     };
 
@@ -299,30 +302,16 @@ std::optional<std::string> validate_cli_inputs(const CliInputs& inputs) {
     if (inputs.max_tool_rounds && *inputs.max_tool_rounds < 1) {
         return "max_tool_rounds must be at least 1, got " + std::to_string(*inputs.max_tool_rounds);
     }
+    static constexpr size_t kMaxSystemPromptLength = 10000;
     if (inputs.system_prompt) {
         if (inputs.system_prompt->empty()) {
             return "system_prompt must be a non-empty string";
         }
-        if (inputs.system_prompt->size() > 10000) {
-            return "system_prompt is too long (max 10000 characters)";
+        if (inputs.system_prompt->size() > kMaxSystemPromptLength) {
+            return "system_prompt is too long (max " + std::to_string(kMaxSystemPromptLength) + " characters)";
         }
     }
     return std::nullopt;
-}
-
-std::vector<json> parse_ndjson(const std::string& data) {
-    std::vector<json> results;
-    std::istringstream stream(data);
-    std::string line;
-    while (std::getline(stream, line)) {
-        if (line.empty()) continue;
-        try {
-            results.push_back(json::parse(line));
-        } catch (const json::parse_error& e) {
-            spdlog::debug("Error parsing NDJSON line: {}", e.what());
-        }
-    }
-    return results;
 }
 
 }

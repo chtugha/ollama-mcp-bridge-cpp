@@ -20,6 +20,13 @@
 
 namespace omb {
 
+static constexpr int kStdioReadTimeoutMs = 30000;
+static constexpr int kChildTermWaitIterations = 50;
+static constexpr useconds_t kChildTermWaitIntervalUs = 100000;
+static constexpr int kSSEConnectReadTimeoutSec = 60;
+static constexpr int kSSERequestReadTimeoutSec = 30;
+static constexpr int kStreamableHTTPReadTimeoutSec = 60;
+
 // --- StdioTransport ---
 
 StdioTransport::StdioTransport(const std::string& command,
@@ -115,11 +122,11 @@ void StdioTransport::disconnect() {
         kill(child_pid_, SIGTERM);
         int status;
         int waited = 0;
-        while (waitpid(child_pid_, &status, WNOHANG) == 0 && waited < 50) {
-            usleep(100000);
+        while (waitpid(child_pid_, &status, WNOHANG) == 0 && waited < kChildTermWaitIterations) {
+            usleep(kChildTermWaitIntervalUs);
             waited++;
         }
-        if (waited >= 50) {
+        if (waited >= kChildTermWaitIterations) {
             kill(child_pid_, SIGKILL);
             waitpid(child_pid_, &status, 0);
         }
@@ -136,7 +143,7 @@ std::string StdioTransport::read_line() {
     pfd.events = POLLIN;
 
     while (true) {
-        int ret = poll(&pfd, 1, 30000);
+        int ret = poll(&pfd, 1, kStdioReadTimeoutMs);
         if (ret <= 0) break;
 
         ssize_t n = read(stdout_fd_, &c, 1);
@@ -220,7 +227,7 @@ bool SSETransport::connect() {
 
     auto cli = std::make_unique<httplib::Client>(
         (is_https ? "https://" : "http://") + host + ":" + std::to_string(port));
-    cli->set_read_timeout(60, 0);
+    cli->set_read_timeout(kSSEConnectReadTimeoutSec, 0);
 
     httplib::Headers hdrs;
     for (auto& [k, v] : headers_) hdrs.emplace(k, v);
@@ -228,15 +235,17 @@ bool SSETransport::connect() {
 
     std::string base_url = (is_https ? "https://" : "http://") + host + ":" + std::to_string(port);
     bool endpoint_found = false;
+    std::string connect_buf;
 
     auto res = cli->Get(path, hdrs,
         [&](const char* data, size_t len) -> bool {
-            std::string chunk(data, len);
-            std::istringstream stream(chunk);
-            std::string line;
-            while (std::getline(stream, line)) {
-                if (line.empty() || line == "\r") continue;
-                if (line.back() == '\r') line.pop_back();
+            connect_buf.append(data, len);
+            std::string::size_type pos;
+            while ((pos = connect_buf.find('\n')) != std::string::npos) {
+                std::string line = connect_buf.substr(0, pos);
+                connect_buf.erase(0, pos + 1);
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                if (line.empty()) continue;
 
                 if (line.substr(0, 5) == "data:") {
                     std::string value = line.substr(5);
@@ -280,15 +289,17 @@ bool SSETransport::connect() {
         for (auto& [k, v] : headers_) hdrs.emplace(k, v);
         hdrs.emplace("Accept", "text/event-stream");
 
+        std::string sse_buf;
         thread_cli->Get(path, hdrs,
             [&](const char* data, size_t len) -> bool {
                 if (!connected_) return false;
-                std::string chunk(data, len);
-                std::istringstream stream(chunk);
-                std::string line;
-                while (std::getline(stream, line)) {
-                    if (line.empty() || line == "\r") continue;
-                    if (line.back() == '\r') line.pop_back();
+                sse_buf.append(data, len);
+                std::string::size_type pos;
+                while ((pos = sse_buf.find('\n')) != std::string::npos) {
+                    std::string line = sse_buf.substr(0, pos);
+                    sse_buf.erase(0, pos + 1);
+                    if (!line.empty() && line.back() == '\r') line.pop_back();
+                    if (line.empty()) continue;
                     if (line.substr(0, 5) == "data:") {
                         std::string value = line.substr(5);
                         if (!value.empty() && value[0] == ' ') value = value.substr(1);
@@ -338,7 +349,7 @@ json SSETransport::send_request(const std::string& method, const json& params) {
 
     auto cli = std::make_unique<httplib::Client>(
         (is_https ? "https://" : "http://") + host + ":" + std::to_string(port));
-    cli->set_read_timeout(30, 0);
+    cli->set_read_timeout(kSSERequestReadTimeoutSec, 0);
 
     httplib::Headers hdrs;
     for (auto& [k, v] : headers_) hdrs.emplace(k, v);
@@ -352,22 +363,23 @@ json SSETransport::send_request(const std::string& method, const json& params) {
     }
 
     std::unique_lock<std::mutex> lock(responses_mutex_);
-    responses_cv_.wait_for(lock, std::chrono::seconds(30), [&]() {
+    responses_cv_.wait_for(lock, std::chrono::seconds(kSSERequestReadTimeoutSec), [&]() {
         return responses_.count(id) > 0;
     });
 
-    if (responses_.count(id)) {
-        json resp = responses_[id];
-        responses_.erase(id);
-        if (resp.contains("error")) {
-            spdlog::error("SSE MCP error: {}", resp["error"].dump());
-            return json::object();
-        }
-        return resp.value("result", json::object());
+    auto it = responses_.find(id);
+    if (it == responses_.end()) {
+        spdlog::error("SSE: Timeout waiting for response to request {}", id);
+        return json::object();
     }
 
-    spdlog::error("SSE: Timeout waiting for response to request {}", id);
-    return json::object();
+    json resp = std::move(it->second);
+    responses_.erase(it);
+    if (resp.contains("error")) {
+        spdlog::error("SSE MCP error: {}", resp["error"].dump());
+        return json::object();
+    }
+    return resp.value("result", json::object());
 }
 
 bool SSETransport::is_connected() const {
@@ -409,7 +421,7 @@ json StreamableHTTPTransport::send_request(const std::string& method, const json
 
     auto cli = std::make_unique<httplib::Client>(
         (is_https ? "https://" : "http://") + host + ":" + std::to_string(port));
-    cli->set_read_timeout(60, 0);
+    cli->set_read_timeout(kStreamableHTTPReadTimeoutSec, 0);
 
     httplib::Headers hdrs;
     for (auto& [k, v] : headers_) hdrs.emplace(k, v);
@@ -500,7 +512,7 @@ bool McpClient::initialize() {
         {"capabilities", json::object()},
         {"clientInfo", {
             {"name", "ollama-mcp-bridge-cpp"},
-            {"version", "0.1.0"}
+            {"version", PROJECT_VERSION}
         }}
     };
 

@@ -11,6 +11,11 @@ struct Server::Impl {
     httplib::Server svr;
 };
 
+static const std::string& cached_cors_origins() {
+    static const std::string origins = get_env("CORS_ORIGINS", "*");
+    return origins;
+}
+
 Server::Server(const ServerConfig& config)
     : config_(config), impl_(std::make_unique<Impl>()) {}
 
@@ -34,7 +39,7 @@ void Server::start() {
     spdlog::info("  GET /health - Health check and status");
     spdlog::info("  GET /version - Version information");
 
-    std::string cors_origins = get_env("CORS_ORIGINS", "*");
+    const std::string& cors_origins = cached_cors_origins();
     if (cors_origins == "*") {
         spdlog::warn("CORS is configured to allow ALL origins (*). This is not recommended for production.");
     } else {
@@ -53,7 +58,6 @@ void Server::stop() {
         impl_->svr.stop();
     }
     if (proxy_service_) {
-        proxy_service_->cleanup();
         proxy_service_.reset();
     }
     if (mcp_manager_) {
@@ -63,7 +67,7 @@ void Server::stop() {
 }
 
 static void add_cors_headers(const httplib::Request& req, httplib::Response& res) {
-    std::string cors_origins = get_env("CORS_ORIGINS", "*");
+    const std::string& cors_origins = cached_cors_origins();
     if (cors_origins == "*") {
         res.set_header("Access-Control-Allow-Origin", "*");
     } else {
@@ -198,7 +202,13 @@ void Server::setup_routes() {
                     res.set_header(k, v);
                 }
             }
-            res.set_content(result.body, "application/json");
+            std::string content_type = "application/json";
+            for (auto& [hk, hv] : result.headers) {
+                std::string lk = hk;
+                std::transform(lk.begin(), lk.end(), lk.begin(), ::tolower);
+                if (lk == "content-type") { content_type = hv; break; }
+            }
+            res.set_content(result.body, content_type);
         } catch (const std::exception& e) {
             spdlog::error("Proxy failed for {}: {}", path, e.what());
             res.status = 500;

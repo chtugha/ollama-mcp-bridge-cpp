@@ -27,12 +27,6 @@ struct McpToolResult {
     std::string text;
 };
 
-enum class McpTransportType {
-    Stdio,
-    SSE,
-    StreamableHTTP
-};
-
 class McpTransport {
 public:
     virtual ~McpTransport() = default;
@@ -86,14 +80,11 @@ private:
     std::string messages_endpoint_;
     std::atomic<bool> connected_{false};
     std::atomic<int> request_id_{0};
-    std::mutex mutex_;
 
     std::thread sse_thread_;
     std::map<int, json> responses_;
     std::mutex responses_mutex_;
     std::condition_variable responses_cv_;
-
-    void sse_listen_loop();
 };
 
 class StreamableHTTPTransport : public McpTransport {

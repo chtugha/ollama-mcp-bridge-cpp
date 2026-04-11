@@ -53,8 +53,6 @@ void http_post_stream(const std::string& url, const std::string& body,
 
 std::string get_env(const std::string& name, const std::string& default_val = "");
 
-std::vector<json> parse_ndjson(const std::string& data);
-
 std::string url_host(const std::string& url);
 int url_port(const std::string& url);
 std::string url_path(const std::string& url);

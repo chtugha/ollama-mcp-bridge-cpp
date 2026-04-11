@@ -37,8 +37,6 @@ public:
                                           const std::string& body,
                                           const std::string& query_string);
 
-    void cleanup();
-
 private:
     MCPManager& mcp_manager_;
 
