@@ -15,3 +15,13 @@ _version.py
 
 # Temporary files
 temp/
+
+# C++ build artifacts
+build/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.dylib
+.cache/
+compile_commands.json
