@@ -7,6 +7,8 @@
 
 namespace omb {
 
+using json = nlohmann::json;
+
 ConfigManager::ConfigManager(const std::string& config_file_path)
     : config_path_(config_file_path) {
     {
