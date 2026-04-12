@@ -57,11 +57,11 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html" WEB_UI_CONTENT)
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/web_ui.h"
     "// Auto-generated from web/index.html — do not edit\n"
     "#pragma once\n"
-    "extern const char* WEB_UI_HTML;\n"
+    "extern const char* const WEB_UI_HTML;\n"
 )
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp"
     "// Auto-generated from web/index.html — do not edit\n"
-    "const char* WEB_UI_HTML = R\"OMB_WEB_9F3A("
+    "const char* const WEB_UI_HTML = R\"OMB_WEB_9F3A("
 )
 file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp" "${WEB_UI_CONTENT}")
 file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp"

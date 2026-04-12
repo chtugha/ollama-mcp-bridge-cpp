@@ -71,7 +71,8 @@ Implement:
 
 Verify: changes compile without errors; `LogBuffer` can be constructed and accepts a log message.
 
-### [ ] Step 3: ConfigManager — config + bridge-state.json persistence
+### [x] Step 3: ConfigManager — config + bridge-state.json persistence
+<!-- chat-id: 463c86e6-6ed8-463e-ace5-c9e0907f395a -->
 
 Implement **`cpp/config_manager.h`** and **`cpp/config_manager.cpp`** as specified in spec §4.3:
 - Constructor: `explicit ConfigManager(const std::string& config_file_path)` — loads `mcp-config.json` into `mcp_config_` JSON; loads or creates `bridge-state.json` into `bridge_state_`; derives `config_dir_` from the config file path using `std::filesystem::path`
