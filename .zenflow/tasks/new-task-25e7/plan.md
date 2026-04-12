@@ -61,7 +61,8 @@ Update `CMakeLists.txt` to:
 
 Verify: `cmake ..` succeeds; `cmake --build .` produces the binary without OpenSSL errors.
 
-### [ ] Step 2: Shared infrastructure — AppState, LogBuffer, utils helpers
+### [x] Step 2: Shared infrastructure — AppState, LogBuffer, utils helpers
+<!-- chat-id: c795701e-f904-411a-be6b-87bc6aac1c18 -->
 
 Implement:
 - **`cpp/app_state.h`** — `struct AppState` as specified in spec §4.1: atomic fields (`proxy_running`, `ollama_reachable`, `shutdown_requested`, `fail_on_ollama_unavailable`), write-once `start_time`, mutex-protected string/int fields for all config, TLS state, and `std::optional<std::thread> proxy_thread`

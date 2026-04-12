@@ -53,6 +53,10 @@ void http_post_stream(const std::string& url, const std::string& body,
 
 std::string get_env(const std::string& name, const std::string& default_val = "");
 
+void atomic_write_file(const std::string& path, const std::string& content);
+bool parse_bool_env(const std::string& val);
+std::string url_encode(const std::string& s);
+
 std::string url_host(const std::string& url);
 int url_port(const std::string& url);
 std::string url_path(const std::string& url);

@@ -57,14 +57,19 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html" WEB_UI_CONTENT)
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/web_ui.h"
     "// Auto-generated from web/index.html — do not edit\n"
     "#pragma once\n"
-    "static const char* WEB_UI_HTML = R\"OLLAMA_MCP_WEB_UI_9F3A("
+    "extern const char* WEB_UI_HTML;\n"
 )
-file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/web_ui.h" "${WEB_UI_CONTENT}")
-file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/web_ui.h"
-    ")OLLAMA_MCP_WEB_UI_9F3A\";\n"
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp"
+    "// Auto-generated from web/index.html — do not edit\n"
+    "const char* WEB_UI_HTML = R\"OMB_WEB_9F3A("
+)
+file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp" "${WEB_UI_CONTENT}")
+file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp"
+    ")OMB_WEB_9F3A\";\n"
 )
 
 add_executable(ollama-mcp-bridge
+    ${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp
     cpp/main.cpp
     cpp/utils.cpp
     cpp/mcp_client.cpp

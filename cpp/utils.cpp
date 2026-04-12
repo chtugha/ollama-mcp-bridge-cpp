@@ -1,12 +1,15 @@
 #include "utils.h"
 
 #include <atomic>
+#include <cctype>
+#include <cerrno>
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <regex>
 #include <sstream>
-#include <filesystem>
-#include <cerrno>
-#include <cstring>
+#include <stdexcept>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -283,6 +286,45 @@ json expand_dict_env_vars(const json& data, const std::string& cwd) {
         }
     }
     return result;
+}
+
+void atomic_write_file(const std::string& path, const std::string& content) {
+    std::string tmp = path + ".tmp";
+    {
+        std::ofstream ofs(tmp, std::ios::out | std::ios::trunc | std::ios::binary);
+        if (!ofs) {
+            throw std::runtime_error("atomic_write_file: cannot open " + tmp + " for writing");
+        }
+        ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
+        if (!ofs) {
+            throw std::runtime_error("atomic_write_file: write failed for " + tmp);
+        }
+    }
+    if (std::rename(tmp.c_str(), path.c_str()) != 0) {
+        throw std::runtime_error("atomic_write_file: rename failed: " + std::string(strerror(errno)));
+    }
+}
+
+bool parse_bool_env(const std::string& val) {
+    std::string lower = val;
+    for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return !(lower == "0" || lower == "false" || lower == "no" || lower == "off");
+}
+
+std::string url_encode(const std::string& s) {
+    static const char hex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s) {
+        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            out += static_cast<char>(c);
+        } else {
+            out += '%';
+            out += hex[(c >> 4) & 0x0F];
+            out += hex[c & 0x0F];
+        }
+    }
+    return out;
 }
 
 std::optional<std::string> validate_cli_inputs(const CliInputs& inputs) {
