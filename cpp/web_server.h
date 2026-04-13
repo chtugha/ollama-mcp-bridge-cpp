@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "app_state.h"
@@ -35,6 +36,8 @@ private:
     std::shared_ptr<MCPManager>    mcp_mgr_;
     std::shared_ptr<TlsManager>    tls_mgr_;
     std::shared_ptr<Server>        proxy_server_;
+
+    std::mutex proxy_action_mutex_;
 
     struct Impl;
     std::unique_ptr<Impl> impl_;

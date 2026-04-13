@@ -268,10 +268,24 @@ void WebServer::setup_routes() {
             return;
         }
 
-        bool requires_restart = false;
         static const std::vector<std::string> restart_fields = {
             "proxy_port", "proxy_host", "web_port", "web_host", "web_tls"
         };
+
+        bool requires_restart = false;
+        for (auto& rf : restart_fields) {
+            if (body.contains(rf)) {
+                requires_restart = true;
+                break;
+            }
+        }
+
+        if (requires_restart) {
+            err(res, 422, "Fields proxy_port, proxy_host, web_port, web_host, web_tls "
+                          "require a full process restart. Update them via CLI flags or "
+                          "environment variables and restart the service.");
+            return;
+        }
 
         std::optional<std::string> new_ollama_url;
         std::optional<std::optional<int>> new_max_tool_rounds;
@@ -284,7 +298,7 @@ void WebServer::setup_routes() {
                 state_->ollama_url = body["ollama_url"].get<std::string>();
                 new_ollama_url = state_->ollama_url;
             }
-            if (body.contains("max_tool_rounds")) {
+            if (body.contains("max_tool_rounds") && body["max_tool_rounds"].is_number_integer()) {
                 int v = body["max_tool_rounds"].get<int>();
                 state_->max_tool_rounds = (v > 0) ? std::optional<int>(v) : std::nullopt;
                 new_max_tool_rounds = state_->max_tool_rounds;
@@ -297,29 +311,6 @@ void WebServer::setup_routes() {
             if (body.contains("cors_origins") && body["cors_origins"].is_string()) {
                 state_->cors_origins = body["cors_origins"].get<std::string>();
             }
-
-            for (auto& rf : restart_fields) {
-                if (body.contains(rf)) {
-                    requires_restart = true;
-                    break;
-                }
-            }
-
-            if (body.contains("proxy_port") && body["proxy_port"].is_number_integer()) {
-                state_->proxy_port = body["proxy_port"].get<int>();
-            }
-            if (body.contains("proxy_host") && body["proxy_host"].is_string()) {
-                state_->proxy_host = body["proxy_host"].get<std::string>();
-            }
-            if (body.contains("web_port") && body["web_port"].is_number_integer()) {
-                state_->web_port = body["web_port"].get<int>();
-            }
-            if (body.contains("web_host") && body["web_host"].is_string()) {
-                state_->web_host = body["web_host"].get<std::string>();
-            }
-            if (body.contains("web_tls") && body["web_tls"].is_boolean()) {
-                state_->web_tls = body["web_tls"].get<bool>();
-            }
         } catch (const std::exception& e) {
             err(res, 500, e.what());
             return;
@@ -329,7 +320,7 @@ void WebServer::setup_routes() {
         if (new_max_tool_rounds) mcp_mgr_->set_max_tool_rounds(*new_max_tool_rounds);
         if (new_system_prompt)   mcp_mgr_->set_system_prompt(*new_system_prompt);
 
-        ok(res, {{"ok", true}, {"requires_restart", requires_restart}});
+        ok(res, {{"ok", true}, {"requires_restart", false}});
     });
 
     // ------------------------------------------------------------------
@@ -391,10 +382,14 @@ void WebServer::setup_routes() {
         }
 
         try {
-            mcp_mgr_->add_server(name, body);
+            json clean = body;
+            clean.erase("name");
+            clean.erase("transport");
+
+            mcp_mgr_->add_server(name, clean);
 
             json cfg = cfg_mgr_->get_mcp_config();
-            cfg["mcpServers"][name] = body;
+            cfg["mcpServers"][name] = clean;
             cfg_mgr_->save_mcp_config(cfg);
 
             ok(res, {{"ok", true}, {"name", name}});
@@ -436,10 +431,14 @@ void WebServer::setup_routes() {
         }
 
         try {
-            mcp_mgr_->update_server(name, body);
+            json clean = body;
+            clean.erase("name");
+            clean.erase("transport");
+
+            mcp_mgr_->update_server(name, clean);
 
             json cfg = cfg_mgr_->get_mcp_config();
-            cfg["mcpServers"][name] = body;
+            cfg["mcpServers"][name] = clean;
             cfg_mgr_->save_mcp_config(cfg);
 
             ok(res, {{"ok", true}, {"name", name}});
@@ -558,6 +557,7 @@ void WebServer::setup_routes() {
     // ------------------------------------------------------------------
 
     svr.Post("/api/proxy/stop", [this](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lk(proxy_action_mutex_);
         if (!state_->proxy_running.load()) {
             err(res, 409, "Proxy is not running");
             return;
@@ -577,8 +577,8 @@ void WebServer::setup_routes() {
     // ------------------------------------------------------------------
 
     svr.Post("/api/proxy/start", [this](const httplib::Request&, httplib::Response& res) {
-        bool expected = false;
-        if (!state_->proxy_running.compare_exchange_strong(expected, true)) {
+        std::lock_guard<std::mutex> lk(proxy_action_mutex_);
+        if (state_->proxy_running.load()) {
             err(res, 409, "Proxy already running");
             return;
         }
@@ -588,7 +588,6 @@ void WebServer::setup_routes() {
             proxy_server_->start_async();
             ok(res, {{"ok", true}});
         } catch (const std::exception& e) {
-            state_->proxy_running.store(false);
             err(res, 500, e.what());
         }
     });
@@ -664,7 +663,11 @@ void WebServer::setup_routes() {
                 auto tt = std::chrono::system_clock::to_time_t(tp);
                 char buf[32];
                 struct tm tm_buf{};
+#ifdef _WIN32
+                gmtime_s(&tm_buf, &tt);
+#else
                 gmtime_r(&tt, &tm_buf);
+#endif
                 strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
 
                 json sans = json::array();

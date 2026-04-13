@@ -4,7 +4,7 @@
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
-#include <regex>
+#include <cctype>
 #include <spdlog/spdlog.h>
 
 namespace omb {
@@ -312,9 +312,18 @@ std::vector<MCPManager::ServerStatus> MCPManager::get_all_server_status() const 
     return result;
 }
 
+static bool is_valid_server_name(const std::string& name) {
+    if (name.empty()) return false;
+    for (char c : name) {
+        if (!isalnum(static_cast<unsigned char>(c)) &&
+            c != '.' && c != '_' && c != '-')
+            return false;
+    }
+    return true;
+}
+
 void MCPManager::add_server(const std::string& name, const json& config) {
-    static const std::regex name_regex("^[a-zA-Z0-9._-]+$");
-    if (!std::regex_match(name, name_regex)) {
+    if (!is_valid_server_name(name)) {
         throw std::invalid_argument("Invalid server name '" + name + "': must match ^[a-zA-Z0-9._-]+$");
     }
 
@@ -423,6 +432,7 @@ void MCPManager::reconnect_server(const std::string& name) {
         return;
     }
     clients_[name] = std::move(result.client);
+    remove_server_tools_(name);
     for (auto& td : result.tools) {
         all_tools_.push_back(td);
     }
