@@ -129,9 +129,9 @@ void Server::start_async() {
     spdlog::info("Startup complete. Total tools available: {}", mcp_manager_->tools_count());
     spdlog::info("Starting MCP proxy server (async) on {}:{}", host, port);
 
+    state_->proxy_running.store(true);
     std::lock_guard<std::mutex> thread_lk(state_->proxy_thread_mutex_);
     state_->proxy_thread = std::thread([this, host, port]() {
-        state_->proxy_running.store(true);
         if (!impl_->svr.listen(host, port)) {
             spdlog::error("Failed to start server on {}:{}", host, port);
         }
