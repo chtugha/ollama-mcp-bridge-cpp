@@ -4,6 +4,7 @@
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
+#include <regex>
 #include <spdlog/spdlog.h>
 
 namespace omb {
@@ -21,7 +22,7 @@ json ToolDefinition::to_json() const {
 
 MCPManager::MCPManager(const std::string& ollama_url,
                        const std::optional<std::string>& system_prompt)
-    : ollama_url(ollama_url), system_prompt(system_prompt) {}
+    : ollama_url_(ollama_url), system_prompt_(system_prompt) {}
 
 MCPManager::~MCPManager() {
     cleanup();
@@ -50,21 +51,38 @@ void MCPManager::load_servers(const std::string& config_path) {
         throw std::runtime_error("Config file '" + config_path + "' missing 'mcpServers' key");
     }
 
+    config_dir_ = config_dir;
     for (auto& [name, server_config] : config["mcpServers"].items()) {
+        server_configs_[name] = server_config;
         json resolved = server_config;
         resolved["cwd"] = config_dir;
         connect_server(name, resolved);
     }
 }
 
-void MCPManager::connect_server(const std::string& name, const json& config) {
+// ---------------------------------------------------------------------------
+// ConnectResult — returned by make_connection(); holds a ready-to-use client
+// and the ToolDefinitions built from it.  All fields are filled lock-free.
+// ---------------------------------------------------------------------------
+
+struct ConnectResult {
+    std::unique_ptr<McpClient> client; // null on error
+    std::vector<ToolDefinition> tools;
+    std::string error;                 // non-empty on error
+};
+
+// make_connection() does ALL network/process I/O and returns a ConnectResult.
+// It must NOT access any MCPManager member — it is called WITHOUT the lock.
+static ConnectResult make_connection(const std::string& name, const json& config) {
+    ConnectResult out;
     try {
         json tool_filter = config.value("toolFilter", json::object());
         if (!tool_filter.empty()) {
             std::string mode = tool_filter.value("mode", "include");
             if (mode != "include" && mode != "exclude") {
-                spdlog::error("Invalid toolFilter mode '{}' for server '{}'. Must be 'include' or 'exclude'.", mode, name);
-                return;
+                out.error = "Invalid toolFilter mode '" + mode + "' for server '" + name + "'. Must be 'include' or 'exclude'.";
+                spdlog::error("{}", out.error);
+                return out;
             }
         }
 
@@ -109,14 +127,16 @@ void MCPManager::connect_server(const std::string& name, const json& config) {
                 transport = std::make_unique<StreamableHTTPTransport>(url, headers);
             }
         } else {
-            spdlog::error("Invalid MCP server config for '{}': must have 'command' or 'url'", name);
-            return;
+            out.error = "Invalid MCP server config for '" + name + "': must have 'command' or 'url'";
+            spdlog::error("{}", out.error);
+            return out;
         }
 
         auto client = std::make_unique<McpClient>(std::move(transport));
         if (!client->initialize()) {
-            spdlog::error("Failed to initialize MCP server '{}'", name);
-            return;
+            out.error = "Failed to initialize MCP server '" + name + "'";
+            spdlog::error("{}", out.error);
+            return out;
         }
 
         auto tools = client->list_tools();
@@ -175,11 +195,10 @@ void MCPManager::connect_server(const std::string& name, const json& config) {
             td.parameters = tool.input_schema;
             td.server_name = name;
             td.original_name = tool.name;
-            all_tools_.push_back(td);
-            all_tools_json_.push_back(td.to_json());
+            out.tools.push_back(td);
         }
 
-        clients_[name] = std::move(client);
+        out.client = std::move(client);
 
         if (!filter_tools.empty()) {
             spdlog::info("Connected to '{}' with {}/{} tools ({})",
@@ -201,8 +220,263 @@ void MCPManager::connect_server(const std::string& name, const json& config) {
         }
 
     } catch (const std::exception& e) {
+        out.client.reset();
+        out.tools.clear();
+        out.error = e.what();
         spdlog::error("Failed to connect to MCP server '{}': {}", name, e.what());
     }
+    return out;
+}
+
+// connect_server() is called under the write lock from load_servers() only
+// (single-threaded startup path).  Management API calls use the
+// snapshot→unlock→make_connection→relock pattern instead.
+void MCPManager::connect_server(const std::string& name, const json& config) {
+    auto result = make_connection(name, config);
+    if (!result.error.empty()) {
+        server_last_errors_[name] = result.error;
+        return;
+    }
+    clients_[name] = std::move(result.client);
+    for (auto& td : result.tools) {
+        all_tools_.push_back(td);
+        all_tools_json_.push_back(td.to_json());
+    }
+    server_last_errors_.erase(name);
+}
+
+void MCPManager::rebuild_tools_json_cache_() {
+    all_tools_json_.clear();
+    for (auto& td : all_tools_) {
+        all_tools_json_.push_back(td.to_json());
+    }
+}
+
+void MCPManager::remove_server_tools_(const std::string& name) {
+    auto it = std::remove_if(all_tools_.begin(), all_tools_.end(),
+        [&name](const ToolDefinition& td) { return td.server_name == name; });
+    all_tools_.erase(it, all_tools_.end());
+    rebuild_tools_json_cache_();
+}
+
+void MCPManager::disconnect_server_(const std::string& name) {
+    auto it = clients_.find(name);
+    if (it != clients_.end()) {
+        try { it->second->close(); } catch (...) {}
+        clients_.erase(it);
+    }
+    remove_server_tools_(name);
+}
+
+std::vector<MCPManager::ServerStatus> MCPManager::get_all_server_status() const {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+    std::vector<ServerStatus> result;
+
+    for (auto& [name, config] : server_configs_) {
+        ServerStatus status;
+        status.name = name;
+
+        if (config.contains("command")) {
+            status.transport_type = "stdio";
+        } else if (config.contains("url")) {
+            std::string trimmed = config["url"].get<std::string>();
+            while (!trimmed.empty() && trimmed.back() == '/') trimmed.pop_back();
+            std::string path = url_path(trimmed);
+            auto qs_pos = path.find('?');
+            if (qs_pos != std::string::npos) path = path.substr(0, qs_pos);
+            if (path.size() >= 4 && path.substr(path.size() - 4) == "/sse") {
+                status.transport_type = "sse";
+            } else {
+                status.transport_type = "http";
+            }
+        } else {
+            status.transport_type = "unknown";
+        }
+
+        auto client_it = clients_.find(name);
+        status.connected = (client_it != clients_.end()) && client_it->second->is_connected();
+
+        status.tool_count = 0;
+        for (auto& td : all_tools_) {
+            if (td.server_name == name) status.tool_count++;
+        }
+
+        auto err_it = server_last_errors_.find(name);
+        if (err_it != server_last_errors_.end()) {
+            status.last_error = err_it->second;
+        }
+
+        result.push_back(status);
+    }
+
+    return result;
+}
+
+void MCPManager::add_server(const std::string& name, const json& config) {
+    static const std::regex name_regex("^[a-zA-Z0-9._-]+$");
+    if (!std::regex_match(name, name_regex)) {
+        throw std::invalid_argument("Invalid server name '" + name + "': must match ^[a-zA-Z0-9._-]+$");
+    }
+
+    json resolved;
+    {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        if (server_configs_.count(name)) {
+            throw std::runtime_error("Server '" + name + "' already exists");
+        }
+        server_configs_[name] = config;
+        resolved = config;
+        if (!config_dir_.empty() && !resolved.contains("cwd")) {
+            resolved["cwd"] = config_dir_;
+        }
+    }
+
+    auto result = make_connection(name, resolved);
+
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    if (!server_configs_.count(name)) {
+        return;
+    }
+    if (!result.error.empty()) {
+        server_last_errors_[name] = result.error;
+        return;
+    }
+    clients_[name] = std::move(result.client);
+    for (auto& td : result.tools) {
+        all_tools_.push_back(td);
+        all_tools_json_.push_back(td.to_json());
+    }
+    server_last_errors_.erase(name);
+}
+
+void MCPManager::remove_server(const std::string& name) {
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+
+    if (!server_configs_.count(name)) {
+        throw std::runtime_error("Server '" + name + "' not found");
+    }
+
+    disconnect_server_(name);
+    server_configs_.erase(name);
+    server_last_errors_.erase(name);
+}
+
+void MCPManager::update_server(const std::string& name, const json& config) {
+    json resolved;
+    {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        if (!server_configs_.count(name)) {
+            throw std::runtime_error("Server '" + name + "' not found");
+        }
+        disconnect_server_(name);
+        server_configs_[name] = config;
+        resolved = config;
+        if (!config_dir_.empty() && !resolved.contains("cwd")) {
+            resolved["cwd"] = config_dir_;
+        }
+    }
+
+    auto result = make_connection(name, resolved);
+
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    if (!server_configs_.count(name)) {
+        return;
+    }
+    if (!result.error.empty()) {
+        server_last_errors_[name] = result.error;
+        return;
+    }
+    clients_[name] = std::move(result.client);
+    auto it = std::remove_if(all_tools_.begin(), all_tools_.end(),
+        [&name](const ToolDefinition& td) { return td.server_name == name; });
+    all_tools_.erase(it, all_tools_.end());
+    for (auto& td : result.tools) {
+        all_tools_.push_back(td);
+    }
+    rebuild_tools_json_cache_();
+    server_last_errors_.erase(name);
+}
+
+void MCPManager::reconnect_server(const std::string& name) {
+    json resolved;
+    {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        auto cfg_it = server_configs_.find(name);
+        if (cfg_it == server_configs_.end()) {
+            throw std::runtime_error("Server '" + name + "' not found");
+        }
+        resolved = cfg_it->second;
+        if (!config_dir_.empty() && !resolved.contains("cwd")) {
+            resolved["cwd"] = config_dir_;
+        }
+        disconnect_server_(name);
+    }
+
+    auto result = make_connection(name, resolved);
+
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    if (!server_configs_.count(name)) {
+        return;
+    }
+    if (!result.error.empty()) {
+        server_last_errors_[name] = result.error;
+        return;
+    }
+    clients_[name] = std::move(result.client);
+    for (auto& td : result.tools) {
+        all_tools_.push_back(td);
+    }
+    rebuild_tools_json_cache_();
+    server_last_errors_.erase(name);
+}
+
+void MCPManager::reconnect_all() {
+    std::vector<std::pair<std::string, json>> entries;
+    {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        for (auto& [n, raw] : server_configs_) {
+            json resolved = raw;
+            if (!config_dir_.empty() && !resolved.contains("cwd")) {
+                resolved["cwd"] = config_dir_;
+            }
+            disconnect_server_(n);
+            entries.emplace_back(n, std::move(resolved));
+        }
+        all_tools_.clear();
+        all_tools_json_.clear();
+    }
+
+    std::vector<std::pair<std::string, ConnectResult>> results;
+    for (auto& [n, cfg] : entries) {
+        results.emplace_back(n, make_connection(n, cfg));
+    }
+
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    for (auto& [n, result] : results) {
+        if (!server_configs_.count(n)) {
+            continue;
+        }
+        if (!result.error.empty()) {
+            server_last_errors_[n] = result.error;
+            continue;
+        }
+        clients_[n] = std::move(result.client);
+        for (auto& td : result.tools) {
+            all_tools_.push_back(td);
+        }
+        server_last_errors_.erase(n);
+    }
+    rebuild_tools_json_cache_();
+}
+
+json MCPManager::get_server_config(const std::string& name) const {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+
+    auto it = server_configs_.find(name);
+    if (it == server_configs_.end()) {
+        throw std::runtime_error("Server '" + name + "' not found");
+    }
+    return it->second;
 }
 
 std::string MCPManager::call_tool(const std::string& tool_name, const json& arguments) {
@@ -246,6 +520,7 @@ size_t MCPManager::tools_count() const {
 }
 
 void MCPManager::cleanup() {
+    std::unique_lock<std::shared_mutex> lock(mutex_);
     for (auto& [name, client] : clients_) {
         try {
             client->close();
@@ -254,6 +529,36 @@ void MCPManager::cleanup() {
         }
     }
     clients_.clear();
+}
+
+std::string MCPManager::get_ollama_url() const {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+    return ollama_url_;
+}
+
+std::optional<std::string> MCPManager::get_system_prompt() const {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+    return system_prompt_;
+}
+
+std::optional<int> MCPManager::get_max_tool_rounds() const {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+    return max_tool_rounds_;
+}
+
+void MCPManager::set_ollama_url(const std::string& url) {
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    ollama_url_ = url;
+}
+
+void MCPManager::set_system_prompt(const std::optional<std::string>& prompt) {
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    system_prompt_ = prompt;
+}
+
+void MCPManager::set_max_tool_rounds(const std::optional<int>& rounds) {
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    max_tool_rounds_ = rounds;
 }
 
 }

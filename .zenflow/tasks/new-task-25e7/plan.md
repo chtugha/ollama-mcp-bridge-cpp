@@ -86,7 +86,9 @@ Implement **`cpp/config_manager.h`** and **`cpp/config_manager.cpp`** as specifi
 
 Verify: construct with a valid path; `get_active_cert()` returns empty string on fresh state; `set_active_cert("foo")` persists to disk.
 
-### [ ] Step 4: TlsManager — certificate scanning, self-signed generation, upload/delete
+### [x] Step 4: TlsManager — certificate scanning, self-signed generation, upload/delete
+<!-- chat-id: e65e966d-3e2e-4a91-b481-f40ba820997d -->
+<!-- completed -->
 
 Implement **`cpp/tls_manager.h`** and **`cpp/tls_manager.cpp`** as specified in spec §4.4:
 - `list_certs(active_cert_name)` — scans `cert_dir_` for `.pem`/`.crt` files paired with a matching `.key` file; uses OpenSSL `X509` API to read CN, SANs, `not_after`; sets `is_active` and `is_expiring_soon` (< 30 days)
@@ -100,7 +102,8 @@ Implement **`cpp/tls_manager.h`** and **`cpp/tls_manager.cpp`** as specified in 
 
 Verify: `list_certs()` compiles and returns empty vector when cert_dir is empty or non-existent; generate job roundtrip works (start → poll → done).
 
-### [ ] Step 5: Modify MCPManager — management API methods and per-server config storage
+### [x] Step 5: Modify MCPManager — management API methods and per-server config storage
+<!-- chat-id: 71fca2d3-2362-4a40-86f1-8d6ee67ca1b1 -->
 
 Modify **`cpp/mcp_manager.h`** and **`cpp/mcp_manager.cpp`** as specified in spec §4.7:
 - Add `std::map<std::string, json> server_configs_` private field to store raw per-server JSON keyed by name
@@ -127,7 +130,8 @@ Modify **`cpp/mcp_manager.h`** and **`cpp/mcp_manager.cpp`** as specified in spe
 
 Verify: compile cleanly; `get_all_server_status()` returns empty vector when no servers configured.
 
-### [ ] Step 6: Modify Server — shared_ptr<AppState>, start_async/reset, Ollama 503 behavior
+### [x] Step 6: Modify Server — shared_ptr<AppState>, start_async/reset, Ollama 503 behavior
+<!-- chat-id: 10b25a11-dcd6-410e-9d3b-943c0bf4cbf3 -->
 
 Modify **`cpp/server.h`** and **`cpp/server.cpp`** as specified in spec §4.6:
 - Change constructor to accept `std::shared_ptr<AppState>` and `std::shared_ptr<LogBuffer>` in addition to `ServerConfig`; accept `std::shared_ptr<MCPManager>` (passed in, not created internally) — `MCPManager` outlives proxy restarts
@@ -141,7 +145,8 @@ Modify **`cpp/server.h`** and **`cpp/server.cpp`** as specified in spec §4.6:
 
 Verify: compile cleanly; proxy can be started, stopped, and restarted via `start_async()` + `stop()` + `reset()` + `start_async()` cycle.
 
-### [ ] Step 7: WebServer — management HTTP(S) server and all API routes
+### [x] Step 7: WebServer — management HTTP(S) server and all API routes
+<!-- chat-id: 6ddff07e-4875-4438-9c9b-12be1dbae891 -->
 
 Implement **`cpp/web_server.h`** and **`cpp/web_server.cpp`** as specified in spec §4.5 and §5:
 
@@ -166,7 +171,8 @@ Implement all management API endpoints:
 
 Verify: server starts and serves `GET /` returning the embedded HTML; `GET /api/status` returns valid JSON.
 
-### [ ] Step 8: SPA — web/index.html (Dashboard, MCP Servers, Tools, Configuration, Logs)
+### [x] Step 8: SPA — web/index.html (Dashboard, MCP Servers, Tools, Configuration, Logs)
+<!-- chat-id: 6179cbf9-8b34-44c9-b8db-6ddf4b8f1f99 -->
 
 Create **`web/index.html`** as specified in spec §4.11 and requirements §3.2.2:
 
@@ -191,7 +197,8 @@ UI requirements:
 
 Verify: HTML is valid; page loads in browser; all sections render; Dashboard shows live status; API calls connect to backend.
 
-### [ ] Step 9: Modify main.cpp — new CLI flags, dual-thread startup, self-pipe shutdown
+### [x] Step 9: Modify main.cpp — new CLI flags, dual-thread startup, self-pipe shutdown
+<!-- chat-id: 75549fe7-d6a6-48d3-993c-1bdd324a7941 -->
 
 Modify **`cpp/main.cpp`** as specified in spec §4.10 and §6:
 

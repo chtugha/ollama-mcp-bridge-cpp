@@ -47,25 +47,31 @@ if(APPLE)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation)
 endif()
 
-# Embed web/index.html into web_ui.h as a C++ raw string literal.
-# The raw-string delimiter is OLLAMA_MCP_WEB_UI_9F3A — do not use this exact
-# token inside web/index.html (see the comment at the top of that file).
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html"
-)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html" WEB_UI_CONTENT)
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/web_ui.h"
+# Embed web/index.html into a C++ raw string literal at BUILD time.
+# Uses add_custom_command so that touching web/index.html without re-running
+# cmake still triggers a regeneration on the next `make` / `ninja` invocation.
+# The raw-string delimiter OMB_WEB_9F3A must not appear verbatim in index.html.
+
+set(WEB_UI_H   "${CMAKE_CURRENT_BINARY_DIR}/web_ui.h")
+set(WEB_UI_CPP "${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp")
+
+# The header only declares the symbol — it never changes, so write it once at
+# configure time (avoids the custom command having to emit two files).
+file(WRITE "${WEB_UI_H}"
     "// Auto-generated from web/index.html — do not edit\n"
     "#pragma once\n"
     "extern const char* const WEB_UI_HTML;\n"
 )
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp"
-    "// Auto-generated from web/index.html — do not edit\n"
-    "const char* const WEB_UI_HTML = R\"OMB_WEB_9F3A("
-)
-file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp" "${WEB_UI_CONTENT}")
-file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/web_ui.cpp"
-    ")OMB_WEB_9F3A\";\n"
+
+add_custom_command(
+    OUTPUT  "${WEB_UI_CPP}"
+    COMMAND ${CMAKE_COMMAND}
+            "-DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html"
+            "-DOUTPUT=${WEB_UI_CPP}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_web.cmake"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html"
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_web.cmake"
+    COMMENT "Embedding web/index.html → web_ui.cpp"
 )
 
 add_executable(ollama-mcp-bridge

@@ -12,11 +12,12 @@ ProxyService::ProxyService(MCPManager& mcp_manager)
 ProxyService::~ProxyService() = default;
 
 std::vector<json> ProxyService::maybe_prepend_system_prompt(const std::vector<json>& messages) {
-    if (!mcp_manager_.system_prompt) return messages;
+    auto sp = mcp_manager_.get_system_prompt();
+    if (!sp) return messages;
 
     if (messages.empty() || messages[0].value("role", "") != "system") {
         std::vector<json> result;
-        result.push_back({{"role", "system"}, {"content", *mcp_manager_.system_prompt}});
+        result.push_back({{"role", "system"}, {"content", *sp}});
         result.insert(result.end(), messages.begin(), messages.end());
         return result;
     }
@@ -24,7 +25,7 @@ std::vector<json> ProxyService::maybe_prepend_system_prompt(const std::vector<js
 }
 
 json ProxyService::health_check() {
-    bool ollama_healthy = check_ollama_health(mcp_manager_.ollama_url);
+    bool ollama_healthy = check_ollama_health(mcp_manager_.get_ollama_url());
     return {
         {"status", ollama_healthy ? "healthy" : "degraded"},
         {"ollama_status", ollama_healthy ? "running" : "not accessible"},
@@ -71,7 +72,7 @@ json ProxyService::make_final_llm_call(const std::string& endpoint, const json& 
     final_payload["messages"] = messages;
     final_payload["tools"] = nullptr;
 
-    std::string url = mcp_manager_.ollama_url + endpoint;
+    std::string url = mcp_manager_.get_ollama_url() + endpoint;
     std::string response_body = http_post(url, final_payload.dump());
 
     if (response_body.empty()) {
@@ -103,14 +104,14 @@ ChatResponse ProxyService::proxy_chat_with_tools(const json& payload) {
     }
     messages = maybe_prepend_system_prompt(messages);
 
-    int max_rounds = mcp_manager_.max_tool_rounds.value_or(0);
+    int max_rounds = mcp_manager_.get_max_tool_rounds().value_or(0);
     int current_round = 0;
 
     while (true) {
         json current_payload = working_payload;
         current_payload["messages"] = messages;
 
-        std::string url = mcp_manager_.ollama_url + "/api/chat";
+        std::string url = mcp_manager_.get_ollama_url() + "/api/chat";
         std::string response_body = http_post(url, current_payload.dump());
 
         if (response_body.empty()) {
@@ -168,14 +169,14 @@ void ProxyService::proxy_chat_with_tools_streaming(const json& payload, StreamCa
     }
     messages = maybe_prepend_system_prompt(messages);
 
-    int max_rounds = mcp_manager_.max_tool_rounds.value_or(0);
+    int max_rounds = mcp_manager_.get_max_tool_rounds().value_or(0);
     int current_round = 0;
 
     while (true) {
         json current_payload = working_payload;
         current_payload["messages"] = messages;
 
-        std::string url = mcp_manager_.ollama_url + "/api/chat";
+        std::string url = mcp_manager_.get_ollama_url() + "/api/chat";
         std::string accumulated;
         std::vector<json> tool_calls;
         std::string response_text;
@@ -253,7 +254,7 @@ void ProxyService::proxy_chat_with_tools_streaming(const json& payload, StreamCa
             final_payload["messages"] = messages;
             final_payload["tools"] = nullptr;
 
-            std::string final_url = mcp_manager_.ollama_url + "/api/chat";
+            std::string final_url = mcp_manager_.get_ollama_url() + "/api/chat";
             http_post_stream(final_url, final_payload.dump(), [&](const std::string& chunk) {
                 callback(chunk);
             });
@@ -267,7 +268,7 @@ ProxyService::GenericResponse ProxyService::proxy_generic_request(
     const std::map<std::string, std::string>& headers,
     const std::string& body, const std::string& query_string) {
 
-    std::string url = mcp_manager_.ollama_url + "/" + path;
+    std::string url = mcp_manager_.get_ollama_url() + "/" + path;
     if (!query_string.empty()) {
         url += "?" + query_string;
     }

@@ -32,6 +32,8 @@ struct AppState {
     std::string web_host;
     int web_port{11464};
     bool web_tls{false};
+    std::string web_cert_file;
+    std::string web_key_file;
 
     std::string proxy_host;
     int proxy_port{8000};

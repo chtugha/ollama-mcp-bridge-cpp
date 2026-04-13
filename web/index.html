@@ -1,13 +1,1482 @@
 <!-- IMPORTANT: The C++ raw-string delimiter for this file is OMB_WEB_9F3A.
-     Do NOT write the closing raw-string pattern (close-paren OMB_WEB_9F3A quote)
-     anywhere in this file or web_ui.cpp will be prematurely terminated. -->
+     Do NOT write the closing raw-string pattern anywhere in this file. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ollama MCP Bridge</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%232563eb'/><path d='M8 14 L16 6 L24 14' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/><path d='M8 20 L16 12 L24 20' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' opacity='0.65'/><rect x='13' y='20' width='6' height='8' rx='1' fill='white' opacity='0.9'/></svg>">
+<style>
+:root {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --primary-light: #dbeafe;
+  --sidebar-bg: #1e293b;
+  --sidebar-hover: #334155;
+  --sidebar-active: #2563eb;
+  --sidebar-text: #94a3b8;
+  --sidebar-active-text: #ffffff;
+  --bg: #f1f5f9;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --success: #16a34a;
+  --success-bg: #dcfce7;
+  --danger: #dc2626;
+  --danger-bg: #fee2e2;
+  --warning: #d97706;
+  --warning-bg: #fef3c7;
+  --info: #0891b2;
+  --info-bg: #e0f2fe;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: var(--text); background: var(--bg); display: flex; min-height: 100vh; }
+a { color: var(--primary); text-decoration: none; }
+
+/* ---- Layout ---- */
+.layout { display: flex; width: 100%; min-height: 100vh; }
+.sidebar { width: 240px; min-width: 240px; background: var(--sidebar-bg); display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; overflow-y: auto; }
+.sidebar-logo { padding: 20px 16px 16px; border-bottom: 1px solid #334155; }
+.sidebar-logo h1 { font-size: 15px; font-weight: 700; color: #ffffff; line-height: 1.3; }
+.sidebar-logo small { font-size: 11px; color: var(--sidebar-text); }
+.sidebar-nav { flex: 1; padding: 8px 0; }
+.sidebar-nav ul { list-style: none; }
+.sidebar-nav li a { display: flex; align-items: center; gap: 10px; padding: 10px 16px; color: var(--sidebar-text); font-size: 13.5px; font-weight: 500; border-radius: 0; transition: background 0.15s, color 0.15s; cursor: pointer; }
+.sidebar-nav li a:hover { background: var(--sidebar-hover); color: #e2e8f0; }
+.sidebar-nav li a.active { background: var(--sidebar-active); color: var(--sidebar-active-text); }
+.sidebar-nav li a svg { width: 16px; height: 16px; flex-shrink: 0; }
+.main { margin-left: 240px; flex: 1; padding: 24px; min-width: 0; }
+
+/* ---- Sections ---- */
+.section { display: none; }
+.section.active { display: block; }
+.section-title { font-size: 20px; font-weight: 700; margin-bottom: 20px; color: var(--text); }
+
+/* ---- Cards ---- */
+.card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 16px; border: 1px solid var(--border); }
+.card-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+
+/* ---- Status grid ---- */
+.status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+.stat-card .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px; }
+.stat-card .value { font-size: 22px; font-weight: 700; color: var(--text); }
+.stat-card .sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* ---- Status dots ---- */
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.dot-green { background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); }
+.dot-red { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-bg); }
+.dot-gray { background: #94a3b8; box-shadow: 0 0 0 3px #f1f5f9; }
+.dot-yellow { background: var(--warning); box-shadow: 0 0 0 3px var(--warning-bg); }
+
+/* ---- Badges ---- */
+.badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.badge-green { background: var(--success-bg); color: var(--success); }
+.badge-red { background: var(--danger-bg); color: var(--danger); }
+.badge-yellow { background: var(--warning-bg); color: var(--warning); }
+.badge-blue { background: var(--primary-light); color: var(--primary); }
+.badge-gray { background: #f1f5f9; color: var(--text-muted); }
+
+/* ---- Alert / Warning banners ---- */
+.alert { padding: 12px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 13px; display: flex; align-items: flex-start; gap: 10px; border-left: 4px solid; }
+.alert-danger { background: var(--danger-bg); border-color: var(--danger); color: #991b1b; }
+.alert-warning { background: var(--warning-bg); border-color: var(--warning); color: #92400e; }
+.alert-info { background: var(--info-bg); border-color: var(--info); color: #164e63; }
+.alert-success { background: var(--success-bg); border-color: var(--success); color: #14532d; }
+.alert-icon { font-size: 16px; flex-shrink: 0; line-height: 1.4; }
+.hidden { display: none !important; }
+
+/* ---- Buttons ---- */
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; border: 1px solid transparent; cursor: pointer; transition: all 0.15s; line-height: 1; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-dark); border-color: var(--primary-dark); }
+.btn-secondary { background: white; color: var(--text); border-color: var(--border); }
+.btn-secondary:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
+.btn-danger { background: white; color: var(--danger); border-color: var(--danger); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-bg); }
+.btn-success { background: var(--success); color: white; border-color: var(--success); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-group { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* ---- Tables ---- */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); background: #f8fafc; white-space: nowrap; }
+td { font-size: 13px; vertical-align: middle; }
+tr:hover td { background: #f8fafc; }
+.td-actions { display: flex; gap: 6px; }
+.td-truncate { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Forms ---- */
+.form-group { margin-bottom: 14px; }
+.form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+.form-control { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; color: var(--text); background: white; transition: border-color 0.15s, box-shadow 0.15s; font-family: inherit; }
+.form-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+.form-control:read-only { background: #f8fafc; color: var(--text-muted); }
+textarea.form-control { resize: vertical; min-height: 80px; }
+.form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-inline { display: flex; gap: 8px; align-items: flex-end; }
+.form-inline .form-group { flex: 1; margin-bottom: 0; }
+.restart-badge { display: inline-flex; align-items: center; padding: 1px 7px; background: var(--warning-bg); color: var(--warning); border-radius: 10px; font-size: 10px; font-weight: 700; margin-left: 6px; vertical-align: middle; }
+
+/* ---- Search bar ---- */
+.search-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+.search-bar input { flex: 1; }
+
+/* ---- Toggle switch ---- */
+.toggle-wrap { display: flex; align-items: center; gap: 10px; }
+.toggle { position: relative; display: inline-block; width: 40px; height: 22px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; inset: 0; background: #cbd5e1; border-radius: 22px; cursor: pointer; transition: 0.2s; }
+.toggle-slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+.toggle input:checked + .toggle-slider { background: var(--primary); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+.toggle-label { font-size: 13px; font-weight: 500; }
+
+/* ---- Tooltip ---- */
+.tooltip { position: relative; display: inline-flex; }
+.tooltip::after { content: attr(data-tooltip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: #1e293b; color: white; font-size: 11px; padding: 5px 9px; border-radius: 5px; white-space: pre-wrap; max-width: 220px; min-width: 80px; text-align: center; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 9999; line-height: 1.4; }
+.tooltip:hover::after { opacity: 1; }
+
+/* ---- Log viewer ---- */
+.log-viewer { background: #0f172a; color: #e2e8f0; font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace; font-size: 12px; padding: 14px; border-radius: var(--radius); height: 520px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+.log-line { padding: 1px 0; }
+.log-error { color: #f87171; }
+.log-warn { color: #fbbf24; }
+.log-debug { color: #64748b; }
+.log-info { color: #e2e8f0; }
+
+/* ---- Inline form (add/edit server) ---- */
+.inline-form { background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-top: 14px; }
+.inline-form h3 { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+.tls-section { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+.cert-info { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 4px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.progress-msg { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+</style>
 </head>
 <body>
-<p>Placeholder — full SPA will be generated in Step 8.</p>
+<div class="layout">
+
+<!-- ===== SIDEBAR ===== -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <h1>Ollama MCP Bridge</h1>
+    <small>Management UI</small>
+  </div>
+  <nav class="sidebar-nav">
+    <ul>
+      <li><a href="#" id="nav-dashboard" class="active" title="View system status, proxy controls and quick actions" onclick="showSection('dashboard');return false;">
+        <svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+        Dashboard
+      </a></li>
+      <li><a href="#" id="nav-servers" title="Add, remove and manage MCP servers" onclick="showSection('servers');return false;">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 3a2 2 0 012-2h10a2 2 0 012 2v2a2 2 0 01-2 2H3a2 2 0 01-2-2V3zm0 6a2 2 0 012-2h10a2 2 0 012 2v2a2 2 0 01-2 2H3a2 2 0 01-2-2V9z"/></svg>
+        MCP Servers
+      </a></li>
+      <li><a href="#" id="nav-tools" title="Browse all tools available from connected MCP servers" onclick="showSection('tools');return false;">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 2a.5.5 0 000 1H11v9H9.5a.5.5 0 000 1h3a.5.5 0 000-1H11V3h1.5a.5.5 0 000-1h-3zm-5 1h1.5a.5.5 0 010 1H4.5v7H6a.5.5 0 010 1H3a.5.5 0 010-1h1.5V4H3a.5.5 0 010-1h1.5z"/></svg>
+        Tools
+      </a></li>
+      <li><a href="#" id="nav-config" title="Configure proxy settings, Ollama URL, TLS and more" onclick="showSection('config');return false;">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 4.754a3.246 3.246 0 100 6.492 3.246 3.246 0 000-6.492zM5.754 8a2.246 2.246 0 114.492 0 2.246 2.246 0 01-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 01-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 01-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 01.52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 011.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 011.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 01.52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 01-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 01-1.255-.52l-.094-.319z"/></svg>
+        Configuration
+      </a></li>
+      <li><a href="#" id="nav-logs" title="View real-time application logs" onclick="showSection('logs');return false;">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 3a.5.5 0 000 1h11a.5.5 0 000-1h-11zm0 3a.5.5 0 000 1h6a.5.5 0 000-1h-6zm0 3a.5.5 0 000 1h6a.5.5 0 000-1h-6zm0 3a.5.5 0 000 1h11a.5.5 0 000-1h-11z"/></svg>
+        Logs
+      </a></li>
+    </ul>
+  </nav>
+  <div style="padding:12px 16px; border-top:1px solid #334155; font-size:11px; color:#475569;">
+    <span id="sidebar-version">v—</span>
+  </div>
+</nav>
+
+<!-- ===== MAIN CONTENT ===== -->
+<main class="main">
+
+<!-- ===== SECTION: DASHBOARD ===== -->
+<section id="sec-dashboard" class="section active">
+  <h2 class="section-title">Dashboard</h2>
+
+  <!-- Ollama unreachable warning -->
+  <div id="ollama-warning" class="alert alert-danger hidden">
+    <span class="alert-icon">&#x26A0;&#xFE0F;</span>
+    <div>
+      <strong>Ollama Unreachable</strong> — The bridge cannot connect to the configured Ollama URL.
+      API proxy requests will return HTTP 503. Check the URL in Configuration.
+    </div>
+  </div>
+
+  <!-- Status cards -->
+  <div class="status-grid">
+    <div class="stat-card">
+      <div class="label">Proxy Status</div>
+      <div class="value" style="display:flex;align-items:center;gap:8px;">
+        <span class="dot" id="dash-proxy-dot"></span>
+        <span id="dash-proxy-status">—</span>
+      </div>
+      <div class="sub" id="dash-proxy-port"></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Ollama</div>
+      <div class="value" style="display:flex;align-items:center;gap:8px;">
+        <span class="dot" id="dash-ollama-dot"></span>
+        <span id="dash-ollama-status">—</span>
+      </div>
+      <div class="sub" id="dash-ollama-url" style="word-break:break-all;"></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">MCP Servers</div>
+      <div class="value" id="dash-servers">—</div>
+      <div class="sub">connected / total</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Tools Available</div>
+      <div class="value" id="dash-tools">—</div>
+      <div class="sub">across all servers</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Web UI Port</div>
+      <div class="value" id="dash-web-port">—</div>
+      <div class="sub" id="dash-web-tls"></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Uptime</div>
+      <div class="value" id="dash-uptime">—</div>
+      <div class="sub">since last start</div>
+    </div>
+  </div>
+
+  <!-- Quick actions -->
+  <div class="card">
+    <div class="card-title">Quick Actions</div>
+    <div class="btn-group">
+      <button id="btn-start-proxy" class="btn btn-success" title="Start the Ollama API proxy server" onclick="proxyStart()">
+        &#9654; Start Proxy
+      </button>
+      <button id="btn-stop-proxy" class="btn btn-danger" title="Stop the Ollama API proxy server (web UI stays running)" onclick="proxyStop()">
+        &#9632; Stop Proxy
+      </button>
+      <button class="btn btn-secondary" title="Reconnect all MCP servers simultaneously" onclick="reconnectAll()">
+        &#8635; Reconnect All MCP Servers
+      </button>
+      <span id="dash-action-msg" style="font-size:12px;color:var(--text-muted);"></span>
+    </div>
+  </div>
+
+  <!-- Recent status -->
+  <div class="card">
+    <div class="card-title">MCP Servers Summary</div>
+    <div id="dash-servers-summary">
+      <div style="color:var(--text-muted);font-size:13px;">Loading...</div>
+    </div>
+  </div>
+
+  <div style="font-size:11px;color:var(--text-muted);text-align:right;margin-top:8px;">
+    Auto-refreshes every 5 s &nbsp;&#183;&nbsp; Last refresh: <span id="dash-last-refresh">—</span>
+  </div>
+</section>
+
+<!-- ===== SECTION: MCP SERVERS ===== -->
+<section id="sec-servers" class="section">
+  <h2 class="section-title">MCP Servers</h2>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div class="card-title" style="margin-bottom:0;">Configured Servers</div>
+      <button class="btn btn-primary" title="Add a new MCP server configuration" onclick="showAddServerForm()">
+        + Add Server
+      </button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th title="Unique server name as defined in mcp-config.json">Name</th>
+            <th title="Transport type: stdio (subprocess), HTTP or SSE (remote)">Type</th>
+            <th title="Current connection status of the MCP server">Status</th>
+            <th title="Number of tools currently registered from this server">Tools</th>
+            <th title="Last error message if the server failed to connect">Last Error</th>
+            <th title="Actions for this server">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="servers-tbody">
+          <tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:20px;">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Add/Edit Server Form -->
+  <div id="server-form-container" class="hidden">
+    <div class="card">
+      <h3 id="server-form-title" style="font-size:15px;font-weight:600;margin-bottom:16px;">Add Server</h3>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="srv-name">Server Name <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="srv-name" class="form-control" placeholder="e.g. my-server" title="Unique identifier for this server. Allowed: a-z, A-Z, 0-9, dot, hyphen, underscore.">
+          <div class="form-hint">Allowed characters: a-z A-Z 0-9 . - _</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="srv-transport">Transport <span style="color:var(--danger)">*</span></label>
+          <select id="srv-transport" class="form-control" title="Transport type: stdio runs a local subprocess; http/sse connects to a remote MCP server over HTTP." onchange="onTransportChange()">
+            <option value="stdio">stdio — local subprocess</option>
+            <option value="http">HTTP — remote server</option>
+            <option value="sse">SSE — server-sent events</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- stdio fields -->
+      <div id="stdio-fields">
+        <div class="form-group">
+          <label class="form-label" for="srv-command">Command <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="srv-command" class="form-control" placeholder="e.g. npx or python3" title="Executable to run as the MCP server subprocess (no shell expansion).">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="srv-args">Arguments</label>
+          <input type="text" id="srv-args" class="form-control" placeholder="e.g. -y @example/mcp-server" title="Space-separated arguments passed to the command. Quoted groups are preserved.">
+          <div class="form-hint">Space-separated. Use quotes for arguments containing spaces.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="srv-env">Environment Variables</label>
+          <textarea id="srv-env" class="form-control" rows="3" placeholder="KEY=value&#10;ANOTHER=value" title="Environment variable overrides for the subprocess, one KEY=value per line."></textarea>
+          <div class="form-hint">One KEY=value per line. These override the parent environment.</div>
+        </div>
+      </div>
+
+      <!-- http/sse fields -->
+      <div id="http-fields" class="hidden">
+        <div class="form-group">
+          <label class="form-label" for="srv-url">URL <span style="color:var(--danger)">*</span></label>
+          <input type="url" id="srv-url" class="form-control" placeholder="http://localhost:3001/mcp" title="Full URL of the remote MCP server endpoint.">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="srv-headers">HTTP Headers</label>
+          <textarea id="srv-headers" class="form-control" rows="3" placeholder="Authorization: Bearer token&#10;X-Custom: value" title="HTTP headers to send with every request, one Header: value per line."></textarea>
+          <div class="form-hint">One Header: value per line. Used for authentication tokens.</div>
+        </div>
+      </div>
+
+      <!-- Tool filter -->
+      <div class="form-group">
+        <label class="form-label" for="srv-filter-mode">Tool Filter Mode</label>
+        <select id="srv-filter-mode" class="form-control" title="Control which tools from this server are exposed. Include = whitelist, Exclude = blacklist, None = all tools." onchange="onFilterModeChange()">
+          <option value="none">None — expose all tools</option>
+          <option value="include">Include — only listed tools</option>
+          <option value="exclude">Exclude — all except listed</option>
+        </select>
+      </div>
+      <div id="filter-tools-group" class="form-group hidden">
+        <label class="form-label" for="srv-filter-tools">Tool Names</label>
+        <textarea id="srv-filter-tools" class="form-control" rows="3" placeholder="search&#10;fetch&#10;read_file" title="One tool name per line. Applied according to the selected filter mode."></textarea>
+        <div class="form-hint">One tool name per line.</div>
+      </div>
+
+      <input type="hidden" id="srv-editing-name" value="">
+      <div class="btn-group" style="margin-top:6px;">
+        <button class="btn btn-primary" title="Save this MCP server configuration" onclick="saveServer()">Save Server</button>
+        <button class="btn btn-secondary" title="Cancel and close this form" onclick="hideServerForm()">Cancel</button>
+        <span id="server-form-msg" style="font-size:12px;color:var(--text-muted);"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION: TOOLS ===== -->
+<section id="sec-tools" class="section">
+  <h2 class="section-title">Tools</h2>
+
+  <div class="card">
+    <div class="search-bar">
+      <input type="text" id="tools-search" class="form-control" placeholder="Filter by name or description..." title="Type to filter tools by name or description text" oninput="filterTools()">
+      <button class="btn btn-secondary btn-sm" title="Reload the tool list from all MCP servers" onclick="loadTools()">&#8635; Refresh</button>
+    </div>
+
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+      Showing <span id="tools-count-shown">—</span> of <span id="tools-count-total">—</span> tools
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th title="Full tool name as exposed to the language model">Tool Name</th>
+            <th title="MCP server that provides this tool">Server</th>
+            <th title="Description of what this tool does">Description</th>
+          </tr>
+        </thead>
+        <tbody id="tools-tbody">
+          <tr><td colspan="3" style="color:var(--text-muted);text-align:center;padding:20px;">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION: CONFIGURATION ===== -->
+<section id="sec-config" class="section">
+  <h2 class="section-title">Configuration</h2>
+
+  <div id="config-save-alert" class="hidden"></div>
+
+  <div class="card">
+    <div class="card-title">Ollama Connection</div>
+    <div class="form-group">
+      <label class="form-label" for="cfg-ollama-url">Ollama URL</label>
+      <div class="form-inline">
+        <div class="form-group">
+          <input type="url" id="cfg-ollama-url" class="form-control" placeholder="http://localhost:11434" title="Base URL of your Ollama instance. Example: http://localhost:11434 or http://192.168.1.10:11434">
+        </div>
+        <button class="btn btn-secondary" title="Test connectivity to the specified Ollama URL and measure latency" onclick="testOllamaConnection()" style="margin-bottom:0;white-space:nowrap;">
+          &#x1F50C; Test Connection
+        </button>
+      </div>
+      <div id="ollama-test-result" class="hidden" style="margin-top:6px;font-size:12px;"></div>
+      <div class="form-hint">The URL of your Ollama instance. Changing this takes effect immediately.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Proxy Settings <span class="restart-badge" title="Changes to these fields require a proxy restart to take effect">Restart Required</span></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label" for="cfg-proxy-port">Proxy Port <span class="restart-badge">&#8635;</span></label>
+        <input type="number" id="cfg-proxy-port" class="form-control" min="1" max="65535" title="TCP port the Ollama-compatible API proxy listens on. Default: 8000. Requires restart.">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="cfg-proxy-host">Proxy Host Bind <span class="restart-badge">&#8635;</span></label>
+        <input type="text" id="cfg-proxy-host" class="form-control" placeholder="0.0.0.0" title="IP address the proxy binds to. Use 127.0.0.1 to restrict to localhost, 0.0.0.0 for all interfaces. Requires restart.">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label" for="cfg-max-tool-rounds">Max Tool Rounds</label>
+        <input type="number" id="cfg-max-tool-rounds" class="form-control" min="0" title="Maximum number of tool-call iterations per chat request. 0 = unlimited. Prevents infinite loops.">
+        <div class="form-hint">0 = unlimited. Recommended: 5-10 for most use cases.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="cfg-cors-origins">CORS Origins</label>
+        <input type="text" id="cfg-cors-origins" class="form-control" placeholder="*" title="Allowed CORS origins for the proxy API, comma-separated. Use * to allow all origins. Example: http://localhost:3000,https://myapp.com">
+        <div class="form-hint">Comma-separated origins. * allows all.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">System Prompt</div>
+    <div class="form-group">
+      <label class="form-label" for="cfg-system-prompt">System Prompt</label>
+      <textarea id="cfg-system-prompt" class="form-control" rows="4" title="Optional system prompt prepended to all chat requests. Leave empty to use the client's system prompt."></textarea>
+      <div class="form-hint">Injected before every chat request. Leave empty to pass through the client system prompt unchanged.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Other</div>
+    <div class="form-group">
+      <label class="form-label" for="cfg-config-file">Config File Path</label>
+      <input type="text" id="cfg-config-file" class="form-control" readonly title="Path to the mcp-config.json file. This is set at startup and cannot be changed via the UI.">
+      <div class="form-hint">Read-only. Set via --config CLI flag at startup.</div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label" for="cfg-web-port">Web UI Port <span class="restart-badge">&#8635;</span></label>
+        <input type="number" id="cfg-web-port" class="form-control" min="1" max="65535" title="TCP port the web management UI listens on. Default: 11464. Requires full process restart.">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="cfg-web-host">Web Host Bind <span class="restart-badge">&#8635;</span></label>
+        <input type="text" id="cfg-web-host" class="form-control" placeholder="0.0.0.0" title="IP the web UI binds to. 127.0.0.1 = local only (recommended for security). Requires restart.">
+      </div>
+    </div>
+  </div>
+
+  <div class="btn-group" style="margin-bottom:20px;">
+    <button class="btn btn-primary" title="Save all configuration changes. Live fields apply immediately; restart-required fields are noted." onclick="saveConfig()">
+      &#x1F4BE; Save Configuration
+    </button>
+    <button class="btn btn-secondary" title="Discard changes and reload current configuration from the server" onclick="loadConfig()">
+      &#8635; Reload
+    </button>
+    <span id="config-save-msg" style="font-size:12px;color:var(--text-muted);"></span>
+  </div>
+
+  <!-- TLS / HTTPS sub-section -->
+  <div class="card">
+    <div class="card-title">
+      TLS / HTTPS
+      <span class="restart-badge" title="Enabling or disabling HTTPS and changing the certificate require a process restart">Restart Required</span>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Enable HTTPS for Web UI</label>
+      <div class="toggle-wrap">
+        <label class="toggle" title="Enable TLS for the web management server. Requires a certificate. Takes effect on restart.">
+          <input type="checkbox" id="cfg-web-tls" onchange="onTlsToggle()" title="Enable TLS/HTTPS for the web management server. Requires a certificate and a process restart to take effect.">
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="toggle-label" id="tls-toggle-label">Disabled</span>
+        <span class="restart-badge">&#8635; restart</span>
+      </div>
+      <div class="form-hint">When enabled, the web UI serves HTTPS only. Plain HTTP connections will receive a TLS handshake error.</div>
+    </div>
+
+    <!-- Certificate selector -->
+    <div id="tls-cert-section">
+      <div class="form-group">
+        <label class="form-label" for="tls-cert-select">Active Certificate <span class="restart-badge">&#8635;</span></label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="tls-cert-select" class="form-control" title="Select the certificate to use for HTTPS. The selected certificate becomes active after restart." onchange="onCertSelect()" style="flex:1;">
+            <option value="">— No certificates found —</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" title="Activate the selected certificate (takes effect on restart)" onclick="activateCert()">Activate</button>
+          <button id="btn-delete-cert" class="btn btn-danger btn-sm" title="Delete this certificate. Cannot delete the active certificate while HTTPS is enabled." onclick="deleteCert()">Delete</button>
+        </div>
+        <div id="cert-info-display" class="cert-info"></div>
+      </div>
+    </div>
+
+    <!-- Generate self-signed -->
+    <div class="tls-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <strong style="font-size:13px;">Generate Self-Signed Certificate</strong>
+        <button class="btn btn-secondary btn-sm" title="Toggle the self-signed certificate generation form" onclick="toggleGenForm()">+ Generate</button>
+      </div>
+      <div id="gen-cert-form" class="hidden inline-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="gen-cn">Common Name (CN) <span style="color:var(--danger)">*</span></label>
+            <input type="text" id="gen-cn" class="form-control" placeholder="localhost" title="Common Name for the certificate, typically the hostname or IP address clients will connect to.">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="gen-days">Validity (days)</label>
+            <input type="number" id="gen-days" class="form-control" value="365" min="1" max="3650" title="Certificate validity period in days. Default is 365 (1 year).">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="gen-keysize">Key Size</label>
+            <select id="gen-keysize" class="form-control" title="RSA key size in bits. 2048 is fast and secure. 4096 takes significantly longer to generate." onchange="onKeySizeChange()">
+              <option value="2048">2048 bits (recommended)</option>
+              <option value="4096">4096 bits (stronger, slower)</option>
+            </select>
+            <div id="keysize-warning" class="hidden" style="margin-top:4px;">
+              <span class="badge badge-yellow">&#9888; 4096-bit key generation may take 10–30 seconds.</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="gen-sans">Subject Alternative Names (SANs)</label>
+            <input type="text" id="gen-sans" class="form-control" placeholder="127.0.0.1, ::1, myhost.local" title="Comma-separated IP addresses or DNS names to include as Subject Alternative Names in the certificate. Required for modern browsers.">
+            <div class="form-hint">Comma-separated IPs or DNS names. Recommended: include all IPs clients use.</div>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button id="btn-generate-cert" class="btn btn-primary" title="Start asynchronous RSA key and certificate generation. Results will appear when complete." onclick="generateCert()">
+            Generate Certificate
+          </button>
+          <span id="gen-cert-msg" class="progress-msg"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Upload certificate -->
+    <div class="tls-section">
+      <strong style="font-size:13px;">Upload Certificate</strong>
+      <div id="upload-http-warning" class="alert alert-warning hidden" style="margin-top:10px;">
+        <span class="alert-icon">&#9888;</span>
+        <div>You are uploading a private key over an unencrypted HTTP connection. Consider enabling HTTPS first or using <code>--web-host 127.0.0.1</code> to restrict access to localhost.</div>
+      </div>
+      <div class="form-row" style="margin-top:10px;">
+        <div class="form-group">
+          <label class="form-label" for="upload-cert-name">Certificate Name <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="upload-cert-name" class="form-control" placeholder="my-server" title="Name (stem) for the certificate files. Files will be saved as &lt;name&gt;.crt and &lt;name&gt;.key in the cert directory.">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="upload-cert-file">Certificate PEM file <span style="color:var(--danger)">*</span></label>
+          <input type="file" id="upload-cert-file" class="form-control" accept=".pem,.crt" title="PEM-encoded certificate file (.pem or .crt)">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="upload-key-file">Private Key PEM file <span style="color:var(--danger)">*</span></label>
+          <input type="file" id="upload-key-file" class="form-control" accept=".pem,.key" title="PEM-encoded private key file (.pem or .key). Stored with chmod 600 permissions.">
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" title="Upload the certificate and private key to the cert directory" onclick="uploadCert()">Upload Certificate</button>
+        <span id="upload-cert-msg" class="progress-msg"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION: LOGS ===== -->
+<section id="sec-logs" class="section">
+  <h2 class="section-title">Logs</h2>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div class="card-title" style="margin-bottom:0;">Application Log</div>
+      <div class="btn-group">
+        <button class="btn btn-secondary btn-sm" title="Clear the log display (does not delete actual log data; new entries will continue to appear)" onclick="clearLogDisplay()">
+          &#128465; Clear Display
+        </button>
+        <button class="btn btn-secondary btn-sm" title="Pause automatic log refresh" onclick="toggleLogPause()" id="btn-log-pause">
+          &#9646;&#9646; Pause
+        </button>
+        <button class="btn btn-secondary btn-sm" title="Manually fetch the latest log lines" onclick="loadLogs()">
+          &#8635; Refresh
+        </button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:16px;align-items:center;margin-bottom:10px;font-size:12px;flex-wrap:wrap;">
+      <span style="color:var(--text-muted);">
+        Auto-refresh every 3 s &nbsp;&#183;&nbsp; Last: <span id="logs-last-refresh">—</span>
+      </span>
+      <span><span style="color:#f87171;">&#9632;</span> ERROR</span>
+      <span><span style="color:#fbbf24;">&#9632;</span> WARN</span>
+      <span><span style="color:#e2e8f0;">&#9632;</span> INFO</span>
+      <span><span style="color:#64748b;">&#9632;</span> DEBUG</span>
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" id="logs-autoscroll" checked title="Automatically scroll to the bottom when new log lines arrive">
+        Auto-scroll
+      </label>
+    </div>
+
+    <div id="log-viewer" class="log-viewer">
+      <div style="color:#475569;padding:4px 0;">Waiting for logs...</div>
+    </div>
+
+    <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:right;">
+      Showing last <span id="log-line-count">0</span> lines (max 500)
+    </div>
+  </div>
+</section>
+
+</main><!-- end .main -->
+</div><!-- end .layout -->
+
+<script>
+"use strict";
+
+// ============================================================
+// Utilities
+// ============================================================
+
+async function apiFetch(path, opts = {}) {
+  const defaults = { headers: { 'Content-Type': 'application/json' } };
+  const r = await fetch(path, Object.assign({}, defaults, opts));
+  const ct = r.headers.get('content-type') || '';
+  const body = ct.includes('application/json') ? await r.json() : await r.text();
+  if (!r.ok) throw Object.assign(new Error(body.error || body || r.statusText), { status: r.status });
+  return body;
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtUptime(s) {
+  if (!s && s !== 0) return '—';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm ' + sec + 's';
+  return sec + 's';
+}
+
+function setMsg(id, msg, color) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = msg; el.style.color = color || 'var(--text-muted)'; }
+}
+
+function showAlert(id, msg, type) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'alert alert-' + (type || 'info');
+  el.innerHTML = '<span class="alert-icon">&#8505;</span><div>' + esc(msg) + '</div>';
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 5000);
+}
+
+// ============================================================
+// Navigation
+// ============================================================
+
+const SECTIONS = ['dashboard', 'servers', 'tools', 'config', 'logs'];
+
+function showSection(name) {
+  SECTIONS.forEach(s => {
+    const sec = document.getElementById('sec-' + s);
+    const nav = document.getElementById('nav-' + s);
+    if (sec) sec.classList.toggle('active', s === name);
+    if (nav) nav.classList.toggle('active', s === name);
+  });
+  // Trigger section-specific load
+  if (name === 'servers') loadServers();
+  if (name === 'tools') loadTools();
+  if (name === 'config') loadConfig();
+  if (name === 'logs') { logPaused = false; loadLogs(); }
+}
+
+// ============================================================
+// Dashboard
+// ============================================================
+
+let dashInterval = null;
+let lastStatus = null;
+
+async function loadDashboard() {
+  try {
+    const s = await apiFetch('/api/status');
+    lastStatus = s;
+
+    document.getElementById('sidebar-version').textContent = 'v' + (s.version || '?');
+
+    // Proxy status
+    const proxyDot = document.getElementById('dash-proxy-dot');
+    const proxyLbl = document.getElementById('dash-proxy-status');
+    const proxyPort = document.getElementById('dash-proxy-port');
+    proxyDot.className = 'dot ' + (s.proxy_running ? 'dot-green' : 'dot-red');
+    proxyLbl.textContent = s.proxy_running ? 'Running' : 'Stopped';
+    proxyPort.textContent = 'Port ' + (s.proxy_port || '—');
+
+    // Proxy buttons
+    document.getElementById('btn-start-proxy').disabled = !!s.proxy_running;
+    document.getElementById('btn-stop-proxy').disabled = !s.proxy_running;
+
+    // Ollama status
+    const ollamaDot = document.getElementById('dash-ollama-dot');
+    const ollamaLbl = document.getElementById('dash-ollama-status');
+    ollamaDot.className = 'dot ' + (s.ollama_reachable ? 'dot-green' : 'dot-red');
+    ollamaLbl.textContent = s.ollama_reachable ? 'Reachable' : 'Unreachable';
+    document.getElementById('dash-ollama-url').textContent = s.ollama_url || '—';
+
+    // Warning banner
+    document.getElementById('ollama-warning').classList.toggle('hidden', !!s.ollama_reachable);
+
+    // Counts
+    document.getElementById('dash-servers').textContent =
+      (s.mcp_servers_connected || 0) + ' / ' + (s.mcp_servers_total || 0);
+    document.getElementById('dash-tools').textContent = s.tools_total || 0;
+
+    // Web
+    document.getElementById('dash-web-port').textContent = s.web_port || '—';
+    document.getElementById('dash-web-tls').textContent = s.web_tls ? 'HTTPS (TLS)' : 'HTTP';
+
+    // Uptime
+    document.getElementById('dash-uptime').textContent = fmtUptime(s.uptime_seconds);
+
+    // Servers summary
+    await loadDashServersSummary();
+
+    document.getElementById('dash-last-refresh').textContent = new Date().toLocaleTimeString();
+  } catch(e) {
+    console.error('Dashboard load error:', e);
+  }
+}
+
+async function loadDashServersSummary() {
+  try {
+    const data = await apiFetch('/api/mcp-servers');
+    const servers = data.servers || [];
+    const el = document.getElementById('dash-servers-summary');
+    if (!servers.length) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No MCP servers configured. <a href="#" onclick="showSection(\'servers\');return false;">Add one</a>.</div>';
+      return;
+    }
+    el.innerHTML = '<div class="table-wrap"><table><thead><tr>' +
+      '<th title="Server name">Name</th>' +
+      '<th title="Transport type">Type</th>' +
+      '<th title="Connection status">Status</th>' +
+      '<th title="Number of tools">Tools</th>' +
+      '</tr></thead><tbody>' +
+      servers.map(srv => '<tr>' +
+        '<td>' + esc(srv.name) + '</td>' +
+        '<td><span class="badge badge-blue">' + esc(srv.transport || srv.config && (srv.config.command ? 'stdio' : 'http') || '—') + '</span></td>' +
+        '<td><span class="dot ' + (srv.connected ? 'dot-green' : 'dot-red') + '" style="margin-right:6px;"></span>' +
+        (srv.connected ? 'Connected' : 'Disconnected') + '</td>' +
+        '<td>' + (srv.tool_count || 0) + '</td>' +
+        '</tr>'
+      ).join('') +
+      '</tbody></table></div>';
+  } catch(e) {
+    // silently fail
+  }
+}
+
+async function proxyStart() {
+  try {
+    setMsg('dash-action-msg', 'Starting proxy...', 'var(--text-muted)');
+    await apiFetch('/api/proxy/start', { method: 'POST' });
+    setMsg('dash-action-msg', 'Proxy started.', 'var(--success)');
+    loadDashboard();
+  } catch(e) {
+    setMsg('dash-action-msg', 'Error: ' + e.message, 'var(--danger)');
+  }
+}
+
+async function proxyStop() {
+  try {
+    setMsg('dash-action-msg', 'Stopping proxy...', 'var(--text-muted)');
+    await apiFetch('/api/proxy/stop', { method: 'POST' });
+    setMsg('dash-action-msg', 'Proxy stopped.', 'var(--warning)');
+    loadDashboard();
+  } catch(e) {
+    setMsg('dash-action-msg', 'Error: ' + e.message, 'var(--danger)');
+  }
+}
+
+async function reconnectAll() {
+  try {
+    setMsg('dash-action-msg', 'Reconnecting all...', 'var(--text-muted)');
+    // reconnect each server
+    const data = await apiFetch('/api/mcp-servers');
+    for (const srv of (data.servers || [])) {
+      try { await apiFetch('/api/mcp-servers/' + encodeURIComponent(srv.name) + '/reconnect', { method: 'POST' }); } catch(e) {}
+    }
+    setMsg('dash-action-msg', 'Reconnect requested.', 'var(--success)');
+    loadDashboard();
+  } catch(e) {
+    setMsg('dash-action-msg', 'Error: ' + e.message, 'var(--danger)');
+  }
+}
+</script>
+
+<script>
+// ============================================================
+// MCP Servers
+// ============================================================
+
+let allServers = [];
+
+async function loadServers() {
+  try {
+    const data = await apiFetch('/api/mcp-servers');
+    allServers = data.servers || [];
+    renderServers();
+  } catch(e) {
+    document.getElementById('servers-tbody').innerHTML =
+      '<tr><td colspan="6" style="color:var(--danger);text-align:center;padding:20px;">Error: ' + esc(e.message) + '</td></tr>';
+  }
+}
+
+function renderServers() {
+  const tbody = document.getElementById('servers-tbody');
+  if (!allServers.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:20px;">No MCP servers configured yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = allServers.map(srv => {
+    const transport = srv.transport || (srv.config && (srv.config.command ? 'stdio' : 'http')) || '—';
+    const lastErr = srv.last_error || '';
+    const isConnected = srv.connected;
+    return '<tr>' +
+      '<td><strong>' + esc(srv.name) + '</strong></td>' +
+      '<td><span class="badge badge-blue">' + esc(transport) + '</span></td>' +
+      '<td>' +
+        '<span class="dot ' + (isConnected ? 'dot-green' : 'dot-red') + '" style="margin-right:6px;"></span>' +
+        (isConnected ? '<span class="badge badge-green">Connected</span>' : '<span class="badge badge-red">Disconnected</span>') +
+      '</td>' +
+      '<td>' + (srv.tool_count || 0) + '</td>' +
+      '<td class="td-truncate" title="' + esc(lastErr) + '">' + (lastErr ? '<span style="color:var(--danger);">' + esc(lastErr.substring(0,60)) + (lastErr.length > 60 ? '…' : '') + '</span>' : '<span style="color:var(--text-muted);">—</span>') + '</td>' +
+      '<td><div class="td-actions">' +
+        '<button class="btn btn-secondary btn-sm" title="Force reconnect this MCP server" onclick="reconnectServer(' + JSON.stringify(srv.name) + ')">&#8635;</button>' +
+        '<button class="btn btn-secondary btn-sm" title="Edit this server\'s configuration" onclick="editServer(' + JSON.stringify(srv.name) + ')">&#9998;</button>' +
+        '<button class="btn btn-danger btn-sm" title="Remove this server from the configuration" onclick="deleteServer(' + JSON.stringify(srv.name) + ')">&#x2715;</button>' +
+      '</div></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function showAddServerForm() {
+  document.getElementById('srv-editing-name').value = '';
+  document.getElementById('server-form-title').textContent = 'Add Server';
+  document.getElementById('srv-name').value = '';
+  document.getElementById('srv-name').disabled = false;
+  document.getElementById('srv-transport').value = 'stdio';
+  document.getElementById('srv-command').value = '';
+  document.getElementById('srv-args').value = '';
+  document.getElementById('srv-env').value = '';
+  document.getElementById('srv-url').value = '';
+  document.getElementById('srv-headers').value = '';
+  document.getElementById('srv-filter-mode').value = 'none';
+  document.getElementById('srv-filter-tools').value = '';
+  document.getElementById('filter-tools-group').classList.add('hidden');
+  onTransportChange();
+  document.getElementById('server-form-container').classList.remove('hidden');
+  document.getElementById('server-form-container').scrollIntoView({ behavior: 'smooth' });
+}
+
+function editServer(name) {
+  const srv = allServers.find(s => s.name === name);
+  if (!srv) return;
+  document.getElementById('srv-editing-name').value = name;
+  document.getElementById('server-form-title').textContent = 'Edit Server: ' + name;
+  document.getElementById('srv-name').value = name;
+  document.getElementById('srv-name').disabled = true;
+  const transport = srv.transport || (srv.config && (srv.config.command ? 'stdio' : 'http')) || 'stdio';
+  document.getElementById('srv-transport').value = transport;
+  const cfg = srv.config || {};
+  document.getElementById('srv-command').value = cfg.command || '';
+  document.getElementById('srv-args').value = (cfg.args || []).join(' ');
+  document.getElementById('srv-env').value = Object.entries(cfg.env || {}).map(([k,v]) => k+'='+v).join('\n');
+  document.getElementById('srv-url').value = cfg.url || '';
+  document.getElementById('srv-headers').value = Object.entries(cfg.headers || {}).map(([k,v]) => k+': '+v).join('\n');
+  const tf = cfg.toolFilter || {};
+  document.getElementById('srv-filter-mode').value = tf.mode || 'none';
+  document.getElementById('srv-filter-tools').value = (tf.tools || []).join('\n');
+  onFilterModeChange();
+  onTransportChange();
+  document.getElementById('server-form-container').classList.remove('hidden');
+  document.getElementById('server-form-container').scrollIntoView({ behavior: 'smooth' });
+}
+
+function hideServerForm() {
+  document.getElementById('server-form-container').classList.add('hidden');
+}
+
+function onTransportChange() {
+  const t = document.getElementById('srv-transport').value;
+  document.getElementById('stdio-fields').classList.toggle('hidden', t !== 'stdio');
+  document.getElementById('http-fields').classList.toggle('hidden', t === 'stdio');
+}
+
+function onFilterModeChange() {
+  const m = document.getElementById('srv-filter-mode').value;
+  document.getElementById('filter-tools-group').classList.toggle('hidden', m === 'none');
+}
+
+function parseEnvLines(text) {
+  const env = {};
+  text.split('\n').forEach(line => {
+    const idx = line.indexOf('=');
+    if (idx > 0) {
+      const k = line.substring(0, idx).trim();
+      const v = line.substring(idx + 1).trim();
+      if (k) env[k] = v;
+    }
+  });
+  return env;
+}
+
+function parseHeaderLines(text) {
+  const h = {};
+  text.split('\n').forEach(line => {
+    const idx = line.indexOf(':');
+    if (idx > 0) {
+      const k = line.substring(0, idx).trim();
+      const v = line.substring(idx + 1).trim();
+      if (k) h[k] = v;
+    }
+  });
+  return h;
+}
+
+async function saveServer() {
+  const editingName = document.getElementById('srv-editing-name').value;
+  const name = document.getElementById('srv-name').value.trim();
+  const transport = document.getElementById('srv-transport').value;
+
+  if (!name) { setMsg('server-form-msg', 'Server name is required.', 'var(--danger)'); return; }
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+    setMsg('server-form-msg', 'Invalid name. Use: a-z A-Z 0-9 . - _', 'var(--danger)');
+    return;
+  }
+
+  const payload = { name, transport };
+
+  if (transport === 'stdio') {
+    const cmd = document.getElementById('srv-command').value.trim();
+    if (!cmd) { setMsg('server-form-msg', 'Command is required for stdio transport.', 'var(--danger)'); return; }
+    payload.command = cmd;
+    const argsStr = document.getElementById('srv-args').value.trim();
+    payload.args = argsStr ? argsStr.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [] : [];
+    const envText = document.getElementById('srv-env').value.trim();
+    if (envText) payload.env = parseEnvLines(envText);
+  } else {
+    const url = document.getElementById('srv-url').value.trim();
+    if (!url) { setMsg('server-form-msg', 'URL is required for ' + transport + ' transport.', 'var(--danger)'); return; }
+    payload.url = url;
+    const headersText = document.getElementById('srv-headers').value.trim();
+    if (headersText) payload.headers = parseHeaderLines(headersText);
+  }
+
+  const filterMode = document.getElementById('srv-filter-mode').value;
+  if (filterMode !== 'none') {
+    const toolsText = document.getElementById('srv-filter-tools').value.trim();
+    payload.toolFilter = { mode: filterMode, tools: toolsText ? toolsText.split('\n').map(t => t.trim()).filter(Boolean) : [] };
+  }
+
+  try {
+    setMsg('server-form-msg', 'Saving...', 'var(--text-muted)');
+    if (editingName) {
+      await apiFetch('/api/mcp-servers/' + encodeURIComponent(editingName), { method: 'PUT', body: JSON.stringify(payload) });
+    } else {
+      await apiFetch('/api/mcp-servers', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    setMsg('server-form-msg', 'Saved!', 'var(--success)');
+    setTimeout(hideServerForm, 800);
+    loadServers();
+  } catch(e) {
+    setMsg('server-form-msg', 'Error: ' + e.message, 'var(--danger)');
+  }
+}
+
+async function deleteServer(name) {
+  if (!confirm('Delete server "' + name + '"? This cannot be undone.')) return;
+  try {
+    await apiFetch('/api/mcp-servers/' + encodeURIComponent(name), { method: 'DELETE' });
+    loadServers();
+  } catch(e) {
+    alert('Error deleting server: ' + e.message);
+  }
+}
+
+async function reconnectServer(name) {
+  try {
+    await apiFetch('/api/mcp-servers/' + encodeURIComponent(name) + '/reconnect', { method: 'POST' });
+    setTimeout(loadServers, 500);
+  } catch(e) {
+    alert('Reconnect error: ' + e.message);
+  }
+}
+</script>
+
+<script>
+// ============================================================
+// Tools
+// ============================================================
+
+let allTools = [];
+
+async function loadTools() {
+  try {
+    const data = await apiFetch('/api/tools');
+    allTools = data.tools || [];
+    filterTools();
+  } catch(e) {
+    document.getElementById('tools-tbody').innerHTML =
+      '<tr><td colspan="3" style="color:var(--danger);text-align:center;padding:20px;">Error: ' + esc(e.message) + '</td></tr>';
+  }
+}
+
+function filterTools() {
+  const q = (document.getElementById('tools-search').value || '').toLowerCase();
+  const filtered = q ? allTools.filter(t =>
+    (t.name || '').toLowerCase().includes(q) ||
+    (t.description || '').toLowerCase().includes(q)
+  ) : allTools;
+  document.getElementById('tools-count-shown').textContent = filtered.length;
+  document.getElementById('tools-count-total').textContent = allTools.length;
+  const tbody = document.getElementById('tools-tbody');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted);text-align:center;padding:20px;">' +
+      (q ? 'No tools match your filter.' : 'No tools available.') + '</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(t => {
+    const desc = t.description || '';
+    const short = desc.length > 120 ? desc.substring(0, 120) + '…' : desc;
+    return '<tr>' +
+      '<td><code style="font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px;">' + esc(t.name) + '</code></td>' +
+      '<td><span class="badge badge-blue">' + esc(t.server) + '</span></td>' +
+      '<td title="' + esc(desc) + '">' + esc(short) + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ============================================================
+// Configuration
+// ============================================================
+
+let currentConfig = {};
+
+async function loadConfig() {
+  try {
+    currentConfig = await apiFetch('/api/config');
+    document.getElementById('cfg-ollama-url').value = currentConfig.ollama_url || '';
+    document.getElementById('cfg-proxy-port').value = currentConfig.proxy_port || 8000;
+    document.getElementById('cfg-proxy-host').value = currentConfig.proxy_host || '0.0.0.0';
+    document.getElementById('cfg-max-tool-rounds').value = currentConfig.max_tool_rounds != null ? currentConfig.max_tool_rounds : 0;
+    document.getElementById('cfg-cors-origins').value = currentConfig.cors_origins || '*';
+    document.getElementById('cfg-system-prompt').value = currentConfig.system_prompt || '';
+    document.getElementById('cfg-config-file').value = currentConfig.config_file || '—';
+    document.getElementById('cfg-web-port').value = currentConfig.web_port || 11464;
+    document.getElementById('cfg-web-host').value = currentConfig.web_host || '0.0.0.0';
+    document.getElementById('cfg-web-tls').checked = !!currentConfig.web_tls;
+    document.getElementById('tls-toggle-label').textContent = currentConfig.web_tls ? 'Enabled' : 'Disabled';
+
+    // Load TLS certificates
+    loadCertificates(currentConfig.web_tls_active_cert);
+
+    // Check if HTTP (show upload warning)
+    updateUploadWarning();
+  } catch(e) {
+    showAlert('config-save-alert', 'Failed to load configuration: ' + e.message, 'danger');
+  }
+}
+
+async function saveConfig() {
+  const payload = {
+    ollama_url: document.getElementById('cfg-ollama-url').value.trim(),
+    proxy_port: parseInt(document.getElementById('cfg-proxy-port').value) || 8000,
+    proxy_host: document.getElementById('cfg-proxy-host').value.trim() || '0.0.0.0',
+    max_tool_rounds: parseInt(document.getElementById('cfg-max-tool-rounds').value) || 0,
+    cors_origins: document.getElementById('cfg-cors-origins').value.trim() || '*',
+    system_prompt: document.getElementById('cfg-system-prompt').value,
+    web_port: parseInt(document.getElementById('cfg-web-port').value) || 11464,
+    web_host: document.getElementById('cfg-web-host').value.trim() || '0.0.0.0',
+    web_tls: document.getElementById('cfg-web-tls').checked
+  };
+  try {
+    setMsg('config-save-msg', 'Saving...', 'var(--text-muted)');
+    const result = await apiFetch('/api/config', { method: 'POST', body: JSON.stringify(payload) });
+    if (result.requires_restart) {
+      setMsg('config-save-msg', 'Saved. Some changes require a restart.', 'var(--warning)');
+    } else {
+      setMsg('config-save-msg', 'Saved successfully.', 'var(--success)');
+    }
+    currentConfig = Object.assign(currentConfig, payload);
+  } catch(e) {
+    setMsg('config-save-msg', 'Error: ' + e.message, 'var(--danger)');
+  }
+}
+
+async function testOllamaConnection() {
+  const url = document.getElementById('cfg-ollama-url').value.trim();
+  if (!url) { setMsg('ollama-test-result', 'Enter a URL first.', 'var(--danger)'); document.getElementById('ollama-test-result').classList.remove('hidden'); return; }
+  try {
+    document.getElementById('ollama-test-result').classList.remove('hidden');
+    document.getElementById('ollama-test-result').style.color = 'var(--text-muted)';
+    document.getElementById('ollama-test-result').textContent = 'Testing...';
+    const r = await apiFetch('/api/ollama/test', { method: 'POST', body: JSON.stringify({ url }) });
+    const el = document.getElementById('ollama-test-result');
+    if (r.reachable) {
+      el.style.color = 'var(--success)';
+      el.textContent = '&#x2713; Reachable — latency ' + r.latency_ms + ' ms';
+    } else {
+      el.style.color = 'var(--danger)';
+      el.textContent = '&#x2715; Unreachable — ' + (r.error || 'connection failed');
+    }
+  } catch(e) {
+    const el = document.getElementById('ollama-test-result');
+    el.style.color = 'var(--danger)';
+    el.textContent = 'Error: ' + e.message;
+  }
+}
+
+function onTlsToggle() {
+  const enabled = document.getElementById('cfg-web-tls').checked;
+  document.getElementById('tls-toggle-label').textContent = enabled ? 'Enabled' : 'Disabled';
+  updateUploadWarning();
+}
+
+function updateUploadWarning() {
+  const tlsEnabled = document.getElementById('cfg-web-tls').checked;
+  const isHttps = location.protocol === 'https:';
+  document.getElementById('upload-http-warning').classList.toggle('hidden', tlsEnabled || isHttps);
+}
+</script>
+
+<script>
+// ============================================================
+// TLS / Certificate Management
+// ============================================================
+
+let allCerts = [];
+let activeCertName = '';
+let genPollInterval = null;
+
+async function loadCertificates(activeOverride) {
+  try {
+    const data = await apiFetch('/api/tls/certificates');
+    allCerts = data.certificates || [];
+    activeCertName = activeOverride || currentConfig.web_tls_active_cert || '';
+    renderCertDropdown();
+  } catch(e) {
+    console.warn('Could not load certificates:', e.message);
+  }
+}
+
+function renderCertDropdown() {
+  const sel = document.getElementById('tls-cert-select');
+  if (!allCerts.length) {
+    sel.innerHTML = '<option value="">— No certificates found —</option>';
+    document.getElementById('cert-info-display').textContent = '';
+    return;
+  }
+  sel.innerHTML = allCerts.map(c => {
+    const exp = c.not_after ? new Date(c.not_after).toLocaleDateString() : '?';
+    const label = c.common_name + ' (expires ' + exp + ')' + (c.is_active ? ' [active]' : '') + (c.is_expiring_soon ? ' ⚠' : '');
+    return '<option value="' + esc(c.name) + '"' + (c.name === activeCertName ? ' selected' : '') + '>' +
+      esc(c.name) + ' — ' + esc(c.common_name) + ' (exp ' + exp + ')' +
+      (c.is_active ? ' [active]' : '') + (c.is_expiring_soon ? ' ⚠' : '') +
+      '</option>';
+  }).join('');
+  onCertSelect();
+}
+
+function onCertSelect() {
+  const sel = document.getElementById('tls-cert-select');
+  const name = sel.value;
+  const cert = allCerts.find(c => c.name === name);
+  const infoEl = document.getElementById('cert-info-display');
+  const delBtn = document.getElementById('btn-delete-cert');
+  if (!cert) { infoEl.textContent = ''; return; }
+
+  const exp = cert.not_after ? new Date(cert.not_after) : null;
+  const expStr = exp ? exp.toLocaleDateString() : '?';
+  const expiring = cert.is_expiring_soon;
+  const expired = exp && exp < new Date();
+  infoEl.innerHTML =
+    'CN: ' + esc(cert.common_name) +
+    (cert.sans && cert.sans.length ? ' &nbsp;|&nbsp; SANs: ' + esc(cert.sans.join(', ')) : '') +
+    ' &nbsp;|&nbsp; Expires: <strong' + (expiring || expired ? ' style="color:var(--danger)"' : '') + '>' + expStr + '</strong>' +
+    (expired ? ' <span class="badge badge-red">EXPIRED</span>' : '') +
+    (expiring ? ' <span class="badge badge-yellow">&#9888; Expiring soon</span>' : '');
+
+  const tlsEnabled = document.getElementById('cfg-web-tls').checked;
+  const isActive = cert.is_active || cert.name === activeCertName;
+  const canDelete = !(tlsEnabled && isActive);
+  delBtn.disabled = !canDelete;
+  delBtn.title = canDelete
+    ? 'Delete this certificate and its key file'
+    : 'Cannot delete the active certificate while HTTPS is enabled. Switch to a different certificate or disable HTTPS first.';
+}
+
+async function activateCert() {
+  const name = document.getElementById('tls-cert-select').value;
+  if (!name) return;
+  try {
+    await apiFetch('/api/tls/activate/' + encodeURIComponent(name), { method: 'POST' });
+    activeCertName = name;
+    await loadCertificates(name);
+    showAlert('config-save-alert', 'Certificate "' + name + '" will be used on next restart.', 'info');
+  } catch(e) {
+    showAlert('config-save-alert', 'Error activating cert: ' + e.message, 'danger');
+  }
+}
+
+async function deleteCert() {
+  const name = document.getElementById('tls-cert-select').value;
+  if (!name) return;
+  if (!confirm('Delete certificate "' + name + '"? This will remove both .crt and .key files.')) return;
+  try {
+    await apiFetch('/api/tls/certificates/' + encodeURIComponent(name), { method: 'DELETE' });
+    await loadCertificates(activeCertName);
+    showAlert('config-save-alert', 'Certificate deleted.', 'success');
+  } catch(e) {
+    showAlert('config-save-alert', 'Error: ' + e.message, 'danger');
+  }
+}
+
+function toggleGenForm() {
+  const form = document.getElementById('gen-cert-form');
+  form.classList.toggle('hidden');
+}
+
+function onKeySizeChange() {
+  const ks = document.getElementById('gen-keysize').value;
+  document.getElementById('keysize-warning').classList.toggle('hidden', ks !== '4096');
+}
+
+async function generateCert() {
+  const cn = document.getElementById('gen-cn').value.trim();
+  if (!cn) { alert('Common Name is required.'); return; }
+  const days = parseInt(document.getElementById('gen-days').value) || 365;
+  const keySize = parseInt(document.getElementById('gen-keysize').value) || 2048;
+  const sansStr = document.getElementById('gen-sans').value.trim();
+  const sans = sansStr ? sansStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  const btn = document.getElementById('btn-generate-cert');
+  const msgEl = document.getElementById('gen-cert-msg');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Generating...';
+  msgEl.textContent = 'Starting generation job...';
+
+  try {
+    const r = await apiFetch('/api/tls/generate-self-signed', {
+      method: 'POST',
+      body: JSON.stringify({ cn, days, key_size: keySize, sans })
+    });
+    const jobId = r.job_id;
+    msgEl.textContent = 'Job ' + jobId + ' started. Polling...';
+
+    if (genPollInterval) clearInterval(genPollInterval);
+    genPollInterval = setInterval(async () => {
+      try {
+        const job = await apiFetch('/api/tls/jobs/' + encodeURIComponent(jobId));
+        if (job.status === 'done') {
+          clearInterval(genPollInterval);
+          genPollInterval = null;
+          btn.disabled = false;
+          btn.textContent = 'Generate Certificate';
+          msgEl.textContent = 'Done! Certificate: ' + job.cert_name;
+          msgEl.style.color = 'var(--success)';
+          await loadCertificates(activeCertName);
+          // Select the newly created cert
+          const sel = document.getElementById('tls-cert-select');
+          for (const opt of sel.options) {
+            if (opt.value === job.cert_name) { sel.value = job.cert_name; break; }
+          }
+          onCertSelect();
+        } else if (job.status === 'error') {
+          clearInterval(genPollInterval);
+          genPollInterval = null;
+          btn.disabled = false;
+          btn.textContent = 'Generate Certificate';
+          msgEl.textContent = 'Error: ' + (job.error || 'generation failed');
+          msgEl.style.color = 'var(--danger)';
+        } else {
+          msgEl.textContent = 'Generating (' + keySize + '-bit key)...';
+        }
+      } catch(e) {
+        clearInterval(genPollInterval);
+        genPollInterval = null;
+        btn.disabled = false;
+        btn.textContent = 'Generate Certificate';
+        msgEl.textContent = 'Poll error: ' + e.message;
+        msgEl.style.color = 'var(--danger)';
+      }
+    }, 2000);
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Generate Certificate';
+    msgEl.textContent = 'Error: ' + e.message;
+    msgEl.style.color = 'var(--danger)';
+    if (e.status === 429) {
+      msgEl.textContent = 'Too many active generation jobs. Wait and retry.';
+    }
+  }
+}
+
+async function uploadCert() {
+  const name = document.getElementById('upload-cert-name').value.trim();
+  const certFile = document.getElementById('upload-cert-file').files[0];
+  const keyFile = document.getElementById('upload-key-file').files[0];
+  const msgEl = document.getElementById('upload-cert-msg');
+
+  if (!name) { msgEl.textContent = 'Name is required.'; msgEl.style.color = 'var(--danger)'; return; }
+  if (!certFile) { msgEl.textContent = 'Certificate file is required.'; msgEl.style.color = 'var(--danger)'; return; }
+  if (!keyFile) { msgEl.textContent = 'Key file is required.'; msgEl.style.color = 'var(--danger)'; return; }
+
+  try {
+    msgEl.textContent = 'Uploading...';
+    msgEl.style.color = 'var(--text-muted)';
+    const certPem = await certFile.text();
+    const keyPem = await keyFile.text();
+    await apiFetch('/api/tls/upload', {
+      method: 'POST',
+      body: JSON.stringify({ name, cert: certPem, key: keyPem })
+    });
+    msgEl.textContent = 'Uploaded!';
+    msgEl.style.color = 'var(--success)';
+    await loadCertificates(activeCertName);
+    const sel = document.getElementById('tls-cert-select');
+    for (const opt of sel.options) {
+      if (opt.value === name) { sel.value = name; break; }
+    }
+    onCertSelect();
+  } catch(e) {
+    msgEl.textContent = 'Error: ' + e.message;
+    msgEl.style.color = 'var(--danger)';
+  }
+}
+</script>
+
+<script>
+// ============================================================
+// Logs
+// ============================================================
+
+let logPaused = false;
+let logCleared = false;
+
+function classifyLogLine(line) {
+  const l = line.toLowerCase();
+  if (l.includes('[error]') || l.includes(' error ') || l.includes('[err]')) return 'log-error';
+  if (l.includes('[warning]') || l.includes('[warn]') || l.includes(' warn ')) return 'log-warn';
+  if (l.includes('[debug]') || l.includes('[trace]')) return 'log-debug';
+  return 'log-info';
+}
+
+async function loadLogs() {
+  if (logPaused) return;
+  try {
+    const data = await apiFetch('/api/logs?n=500');
+    const lines = data.lines || [];
+    document.getElementById('log-line-count').textContent = lines.length;
+    document.getElementById('logs-last-refresh').textContent = new Date().toLocaleTimeString();
+
+    if (logCleared) return;
+
+    const viewer = document.getElementById('log-viewer');
+    const wasAtBottom = viewer.scrollHeight - viewer.scrollTop - viewer.clientHeight < 40;
+
+    viewer.innerHTML = lines.map(line =>
+      '<div class="log-line ' + classifyLogLine(line) + '">' + esc(line) + '</div>'
+    ).join('');
+
+    const autoScroll = document.getElementById('logs-autoscroll').checked;
+    if (autoScroll && wasAtBottom) {
+      viewer.scrollTop = viewer.scrollHeight;
+    }
+  } catch(e) {
+    // silently fail for log polling
+  }
+}
+
+function clearLogDisplay() {
+  logCleared = true;
+  document.getElementById('log-viewer').innerHTML = '<div style="color:#475569;font-style:italic;">Log display cleared. New entries will appear when you un-pause or next refresh.</div>';
+  document.getElementById('log-line-count').textContent = '0';
+  document.getElementById('btn-log-pause').innerHTML = '&#9654; Resume';
+  logPaused = true;
+}
+
+function toggleLogPause() {
+  logPaused = !logPaused;
+  logCleared = false;
+  document.getElementById('btn-log-pause').innerHTML = logPaused
+    ? '&#9654; Resume'
+    : '&#9646;&#9646; Pause';
+  if (!logPaused) loadLogs();
+}
+
+// ============================================================
+// Polling intervals
+// ============================================================
+
+function startPolling() {
+  loadDashboard();
+  dashInterval = setInterval(loadDashboard, 5000);
+  setInterval(loadLogs, 3000);
+}
+
+// ============================================================
+// Startup
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+  showSection('dashboard');
+  startPolling();
+});
+</script>
 </body>
 </html>
